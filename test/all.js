@@ -16,5 +16,7 @@ import "./remove.test.js";
 import "./realizability.test.js";
 import "./io.test.js";
 import "./phantom.test.js";
+import "./iou.test.js";
+import "./detect.test.js";
 
 await runAndReport();

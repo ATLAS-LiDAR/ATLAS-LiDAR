@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ATLAS-Sandbox — proxy detector quality</title>
+<style>
+  body{background:#101310;color:#DCE3D6;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;padding:24px}
+  pre{white-space:pre}
+  h1{font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:#76B900}
+</style>
+</head>
+<body>
+<h1>Proxy detector quality vs ground truth</h1>
+<script type="module">
+/**
+ * Quantifies how well the PROXY detector recovers real ground-truth objects,
+ * and ablates each design choice so none of them rests on intuition.
+ *
+ * This is the baseline any proxy ASR number must be read against: if the
+ * detector only finds 40% of real vehicles on clean data, a removal attack that
+ * appears to "succeed" 60% of the time has explained nothing. It is also why
+ * removal ASR is conditioned on the target being detected in the clean pass,
+ * exactly as atlas_injection_eval_only does for its displacement metrics.
+ */
+import { configureSensor } from "./src/core/sensor.js";
+import { loadAtlasFrame, loadManifest, toPointFrame } from "./src/io/atlasframe.js";
+import { composeCloud } from "./src/core/compose.js";
+import { detect } from "./src/core/detect.js";
+import { maxIoU, normalizeBox } from "./src/core/iou.js";
+
+const VEHICLE = /car|van|truck|bus|trailer|vehicle/i;
+const PED = /pedestrian|person/i;
+const CYC = /cyclist|bicycle|motorcycle/i;
+const group = (l) => (VEHICLE.test(l) ? "vehicle" : CYC.test(l) ? "cyclist" : PED.test(l) ? "pedestrian" : "other");
+
+const CONFIGS = {
+  default: {},
+  "no-vehicle-prior": { vehiclePrior: false },
+  "fixed-minpoints": { minPointsAtRangeM: 1e9 },
+  "cluster-0.3": { clusterCellM: 0.3 },
+  "cluster-0.6": { clusterCellM: 0.6 },
+  "ground-margin-0.2": { groundMarginM: 0.2 },
+  "ground-cell-8": { groundCellM: 8.0 },
+};
+
+const out = [];
+const log = (s) => out.push(s);
+
+const manifest = await loadManifest("assets/frames/manifest.json");
+
+// preload + index every frame once
+const frames = [];
+for (const entry of manifest) {
+  const loaded = await loadAtlasFrame("assets/frames/" + entry.file);
+  const sensor = configureSensor(loaded.header.sensor);
+  const frame = toPointFrame(loaded, sensor);
+  const gts = [];
+  for (const b of loaded.header.boxes) {
+    if (Math.hypot(b.center[0], b.center[1]) > 40) continue;
+    const g = group(b.label);
+    if (g !== "other") gts.push({ box: normalizeBox(b), group: g });
+  }
+  frames.push({ entry, sensor, cloud: composeCloud({ frame }), gts });
+}
+
+function evaluate(params) {
+  const tot = {};
+  let nDets = 0;
+  let ms = 0;
+  for (const f of frames) {
+    const t0 = performance.now();
+    const dets = detect(f.cloud, { sensor: f.sensor, params });
+    ms += performance.now() - t0;
+    nDets += dets.length;
+    for (const gt of f.gts) {
+      const iou = maxIoU(dets, gt.box).iou;
+      const t = (tot[gt.group] ||= { n: 0, h3: 0, h5: 0, sum: 0 });
+      t.n++;
+      t.sum += iou;
+      if (iou >= 0.3) t.h3++;
+      if (iou >= 0.5) t.h5++;
+    }
+  }
+  return { tot, nDets, ms };
+}
+
+log("ABLATION — recall@IoU over all library frames, GT within 40 m");
+log("");
+log("config                 vehicle@0.3  veh@0.5   ped@0.3   cyc@0.3   dets    ms");
+log("-".repeat(76));
+for (const [name, params] of Object.entries(CONFIGS)) {
+  const { tot, nDets, ms } = evaluate(params);
+  const g = (k, f) => (tot[k] ? (tot[k][f] / tot[k].n).toFixed(2) : " -  ");
+  log(
+    name.padEnd(22) +
+      g("vehicle", "h3").padStart(10) +
+      g("vehicle", "h5").padStart(9) +
+      g("pedestrian", "h3").padStart(10) +
+      g("cyclist", "h3").padStart(10) +
+      String(nDets).padStart(7) +
+      ms.toFixed(0).padStart(6)
+  );
+}
+
+log("");
+log("PER-FRAME, default config");
+log("");
+log("frame                     class        n   recall@0.3  recall@0.5   medIoU   dets");
+log("-".repeat(80));
+for (const f of frames) {
+  const dets = detect(f.cloud, { sensor: f.sensor });
+  const byGroup = {};
+  for (const gt of f.gts) (byGroup[gt.group] ||= []).push(maxIoU(dets, gt.box).iou);
+  for (const [g, ious] of Object.entries(byGroup)) {
+    const at = (t) => ious.filter((v) => v >= t).length / ious.length;
+    const sorted = ious.slice().sort((a, b) => a - b);
+    log(
+      f.entry.slug.padEnd(24) + "  " + g.padEnd(11) + String(ious.length).padStart(3) +
+        at(0.3).toFixed(2).padStart(12) + at(0.5).toFixed(2).padStart(12) +
+        sorted[sorted.length >> 1].toFixed(3).padStart(9) + String(dets.length).padStart(7)
+    );
+  }
+}
+
+const pre = document.createElement("pre");
+pre.id = "bench";
+pre.textContent = out.join("\n");
+document.body.appendChild(pre);
+const m = document.createElement("div");
+m.id = "bench-done";
+m.textContent = "BENCH_DONE";
+document.body.appendChild(m);
+</script>
+</body>
+</html>
