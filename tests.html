@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ATLAS-Sandbox tests</title>
+<style>
+  body{background:#101310;color:#DCE3D6;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;padding:24px}
+  pre{white-space:pre-wrap}
+  #atlas-done{color:#76B900;margin-top:14px}
+</style>
+</head>
+<body>
+<h1 style="font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:#76B900">ATLAS-Sandbox test run</h1>
+<script type="module">
+  // Surface module-load failures (bad import path, syntax error) as a red run
+  // instead of a blank page that the CLI would misread as "no tests".
+  window.addEventListener("error", (e) => {
+    const pre = document.createElement("pre");
+    pre.textContent = "LOAD ERROR: " + (e.message || e.error);
+    document.body.appendChild(pre);
+    const m = document.createElement("div");
+    m.id = "atlas-done";
+    m.textContent = "ATLAS_TESTS_DONE pass=0 fail=1";
+    document.body.appendChild(m);
+  });
+  try {
+    await import("./test/all.js");
+  } catch (e) {
+    const pre = document.createElement("pre");
+    pre.textContent = "LOAD ERROR: " + (e && e.stack ? e.stack : e);
+    document.body.appendChild(pre);
+    const m = document.createElement("div");
+    m.id = "atlas-done";
+    m.textContent = "ATLAS_TESTS_DONE pass=0 fail=1";
+    document.body.appendChild(m);
+  }
+</script>
+</body>
+</html>

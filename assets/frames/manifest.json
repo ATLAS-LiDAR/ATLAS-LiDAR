@@ -1,0 +1,47 @@
+[
+  {
+    "file": "kitti-open-road.atlasframe",
+    "slug": "kitti-open-road",
+    "label": "Open road - truck, car, cyclist (HDL-64E)",
+    "dataset": "kitti",
+    "sensor": "hdl64e",
+    "nPoints": 120268,
+    "nBoxes": 3
+  },
+  {
+    "file": "kitti-dense-traffic.atlasframe",
+    "slug": "kitti-dense-traffic",
+    "label": "Dense traffic - 19 cars (HDL-64E)",
+    "dataset": "kitti",
+    "sensor": "hdl64e",
+    "nPoints": 116953,
+    "nBoxes": 21
+  },
+  {
+    "file": "kitti-crossing-vru.atlasframe",
+    "slug": "kitti-crossing-vru",
+    "label": "Crossing - 13 pedestrians, 4 cyclists (HDL-64E)",
+    "dataset": "kitti",
+    "sensor": "hdl64e",
+    "nPoints": 123465,
+    "nBoxes": 21
+  },
+  {
+    "file": "kitti-parked-row.atlasframe",
+    "slug": "kitti-parked-row",
+    "label": "Parked row - 17 cars, 2 vans (HDL-64E)",
+    "dataset": "kitti",
+    "sensor": "hdl64e",
+    "nPoints": 113988,
+    "nBoxes": 21
+  },
+  {
+    "file": "nuscenes-boston.atlasframe",
+    "slug": "nuscenes-boston",
+    "label": "Boston street, single sweep (HDL-32E)",
+    "dataset": "nuscenes",
+    "sensor": "hdl32e",
+    "nPoints": 34752,
+    "nBoxes": 23
+  }
+]

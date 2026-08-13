@@ -1,0 +1,21 @@
+# Chrome/test scratch
+.chrome-profile/
+/tmp/
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor
+.DS_Store
+*.swp
+
+# NOTE ON THE EXPORTED FRAMES
+# assets/frames/*.atlasframe IS committed so the sandbox runs from a fresh
+# checkout without needing the datasets mounted (~3.5 MB total).
+#
+# Those files are derived from KITTI (CC BY-NC-SA) and nuScenes, whose terms
+# restrict redistribution. BEFORE PUSHING THIS ANYWHERE PUBLIC, either confirm
+# redistribution of derived point clouds is permitted or uncomment the line
+# below and rely on tools/export_frames.py to regenerate them locally.
+# assets/frames/*.atlasframe
