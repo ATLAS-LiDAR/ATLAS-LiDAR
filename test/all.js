@@ -18,5 +18,6 @@ import "./io.test.js";
 import "./phantom.test.js";
 import "./iou.test.js";
 import "./detect.test.js";
+import "./export.test.js";
 
 await runAndReport();

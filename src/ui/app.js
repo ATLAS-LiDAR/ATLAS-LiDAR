@@ -15,6 +15,8 @@ import { analyzeAttack, classifyRealizability, firingBudget } from "../core/real
 import { syncHitProbability, minRelayRange } from "../core/tof.js";
 import { loadAtlasFrame, loadManifest, parseAtlasFrame, parseRawLidar, toPointFrame } from "../io/atlasframe.js";
 import { renderBEV, renderRangeImage, makeView } from "./render.js";
+import { composeCloud } from "../core/compose.js";
+import { buildAttackBundle, downloadBundle, bundleFilename } from "../io/export.js";
 
 const DEG = Math.PI / 180;
 const $ = (id) => document.getElementById(id);
@@ -167,6 +169,9 @@ function recompute() {
     replacement = result.replacement;
   }
   const computeMs = performance.now() - t0;
+
+  // remember what produced the current view, so Export ships exactly this
+  S.last = { sensor: sn, spoofer: sp, reach, keepMask, spoof: spoofPts, replacement, result };
 
   render(frame, sn, reach, keepMask, spoofPts, replacement);
   updateReadouts(sn, sp, reach, result, computeMs);
@@ -426,6 +431,59 @@ export async function boot() {
   $("groundAnchor").onchange = (e) => { S.groundAnchor = e.target.checked; recompute(); };
   $("showRemoved").onchange = (e) => { S.showRemoved = e.target.checked; recompute(); };
   $("showBoxes").onchange = (e) => { S.showBoxes = e.target.checked; recompute(); };
+
+  $("exportBtn").onclick = () => {
+    if (!S.last) return;
+    const { sensor: sn, spoofer: sp, reach, keepMask, spoof, replacement, result } = S.last;
+    const cloud = composeCloud({ frame: S.frame, keepMask, spoof, replacement });
+
+    // For an injection the phantom box is what a detector must match; derive it
+    // from the points that actually landed, not the requested geometry.
+    let spoofGt = null;
+    if (S.attack === "inject" && spoof && spoof.x.length > 0) {
+      let sx = 0, sy = 0, zMin = Infinity, zMax = -Infinity;
+      for (let i = 0; i < spoof.x.length; i++) {
+        sx += spoof.x[i];
+        sy += spoof.y[i];
+        zMin = Math.min(zMin, spoof.z[i]);
+        zMax = Math.max(zMax, spoof.z[i]);
+      }
+      const n = spoof.x.length;
+      const bearing = reach.geometry.bearing;
+      spoofGt = [
+        sx / n, sy / n, (zMin + zMax) / 2,
+        S.phantomLen, Math.max(1.4, S.phantomLen * 0.45), 1.6, bearing + Math.PI / 2,
+      ];
+    }
+
+    const bundle = buildAttackBundle({
+      cloud,
+      sensor: sn,
+      frameId: S.loaded.header.frameId ?? S.sceneSlug,
+      dataset: S.loaded.header.dataset,
+      sceneSlug: S.sceneSlug,
+      spoofGt,
+      attack: {
+        mode: S.attack, shape: S.shape, phantomRange: S.phantomRange,
+        phantomLen: S.phantomLen, intensityMode: S.intensityMode,
+        attackerRangeM: S.attackerRange, groundAnchor: S.groundAnchor,
+        spooferPos: S.spooferPos, seed: S.seed, hz: S.hz, returnMode: S.returnMode,
+      },
+      spooferConfig: sp,
+      stats: { ...result.stats, reachableCells: reach.cells.length, feasible: reach.feasible },
+      scheduledAttack: true,
+    });
+
+    downloadBundle(bundle, bundleFilename({
+      frameId: bundle.header.frameId, mode: S.attack, slug: S.sceneSlug,
+    }));
+    setStatus(
+      `Exported ${bundle.header.nPoints.toLocaleString()} points ` +
+        `(${(bundle.byteLength / 1024 / 1024).toFixed(2)} MB). ` +
+        `Convert with tools/import_attack.py, then score with eval_matrix_kitti.py.`,
+      "ok"
+    );
+  };
 
   // click to place the spoofer
   const cv = $("cvClean");

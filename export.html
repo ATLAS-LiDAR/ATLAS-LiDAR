@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ATLAS-Sandbox — headless attack export</title>
+</head>
+<body>
+<script type="module">
+/**
+ * Headless-drivable attack export.
+ *
+ * The physics lives in JS, so rather than reimplement it in Python (and let the
+ * two drift), tools/export_headless.py drives this page in headless Chrome and
+ * reads the bundle back out of the DOM as base64. The JS core stays the single
+ * source of truth for what an attack does.
+ *
+ * Config comes in as a URL-encoded JSON `cfg` parameter, e.g.
+ *   export.html?cfg={"scene":"kitti-open-road","mode":"inject",...}
+ */
+import { configureSensor } from "./src/core/sensor.js";
+import { configureSpoofer, reachableCells } from "./src/core/spoofer.js";
+import { injectPhantom } from "./src/core/inject.js";
+import { removeReturns } from "./src/core/remove.js";
+import { makePhantom } from "./src/core/phantom.js";
+import { composeCloud } from "./src/core/compose.js";
+import { loadAtlasFrame, loadManifest, toPointFrame } from "./src/io/atlasframe.js";
+import { buildAttackBundle, bundleToBase64 } from "./src/io/export.js";
+
+function emit(id, text) {
+  const el = document.createElement("pre");
+  el.id = id;
+  el.textContent = text;
+  document.body.appendChild(el);
+}
+
+function done(status) {
+  const m = document.createElement("div");
+  m.id = "export-done";
+  m.textContent = "EXPORT_DONE " + status;
+  document.body.appendChild(m);
+}
+
+try {
+  const params = new URLSearchParams(location.search);
+  const cfg = JSON.parse(params.get("cfg") || "{}");
+
+  const manifest = await loadManifest("assets/frames/manifest.json");
+  const entry = manifest.find((m) => m.slug === cfg.scene) || manifest[0];
+  const loaded = await loadAtlasFrame("assets/frames/" + entry.file);
+
+  const sensor = configureSensor(cfg.sensor || loaded.header.sensor, {
+    hz: cfg.hz ?? 10,
+    returnMode: cfg.returnMode ?? "strongest",
+  });
+  const frame = toPointFrame(loaded, sensor);
+
+  const spoofer = configureSpoofer(cfg.spoofer || "cao2023", {
+    ...(cfg.powerRatio != null ? { powerRatio: cfg.powerRatio } : {}),
+    ...(cfg.divergenceMrad != null ? { divergenceMrad: cfg.divergenceMrad } : {}),
+    ...(cfg.latencyS != null ? { latencyS: cfg.latencyS } : {}),
+    ...(cfg.prfHz != null ? { prfHz: cfg.prfHz } : {}),
+    ...(cfg.jitterS != null ? { jitterS: cfg.jitterS } : {}),
+    ...(cfg.syncMode != null ? { syncMode: cfg.syncMode } : {}),
+    ...(cfg.canPredict != null ? { canPredict: cfg.canPredict } : {}),
+  });
+
+  const pos = cfg.spooferPos || [25, 6, 0];
+  const reach = reachableCells({ frame, sensor, spoofer, positionXYZ: pos });
+  const mode = cfg.mode || "inject";
+  const seed = cfg.seed ?? 7;
+
+  let keepMask = null;
+  let spoof = null;
+  let replacement = null;
+  let spoofGt = null;
+  let stats = {};
+
+  if (mode === "inject") {
+    const bearing = reach.geometry.bearing;
+    const range = cfg.phantomRange ?? 30;
+    const len = cfg.phantomLen ?? 4.2;
+    const box = {
+      center: [Math.cos(bearing) * range, Math.sin(bearing) * range, cfg.phantomZ ?? -1.2],
+      size: [len, Math.max(1.4, len * 0.45), cfg.phantomHeight ?? 1.6],
+      yaw: bearing + Math.PI / 2,
+    };
+    const phantom = reach.feasible
+      ? makePhantom({ shape: cfg.shape || "box", sensor, reach, box, range })
+      : { x: new Float64Array(0), y: new Float64Array(0), z: new Float64Array(0) };
+
+    const res = injectPhantom({
+      frame, sensor, spoofer, positionXYZ: pos, phantom, reach,
+      dataset: loaded.header.dataset,
+      intensityMode: cfg.intensityMode || "range-conditioned",
+      constantIntensity: cfg.constantIntensity ?? 100,
+      seed,
+      groundAnchor: cfg.groundAnchor ?? true,
+    });
+    keepMask = res.keepMask;
+    spoof = res.spoof;
+    stats = res.stats;
+
+    // The phantom's realised extent is what a detector must match, so derive the
+    // GT box from the points that actually landed rather than the requested box.
+    if (res.spoof.x.length > 0) {
+      let xs = 0, ys = 0, zMin = Infinity, zMax = -Infinity;
+      let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+      for (let i = 0; i < res.spoof.x.length; i++) {
+        xs += res.spoof.x[i]; ys += res.spoof.y[i];
+        xMin = Math.min(xMin, res.spoof.x[i]); xMax = Math.max(xMax, res.spoof.x[i]);
+        yMin = Math.min(yMin, res.spoof.y[i]); yMax = Math.max(yMax, res.spoof.y[i]);
+        zMin = Math.min(zMin, res.spoof.z[i]); zMax = Math.max(zMax, res.spoof.z[i]);
+      }
+      const n = res.spoof.x.length;
+      // Use the requested box dimensions but the realised centre: a partially
+      // landed phantom still represents an object of the intended size.
+      spoofGt = [
+        xs / n, ys / n, (zMin + zMax) / 2,
+        box.size[0], box.size[1], box.size[2], box.yaw,
+      ];
+    }
+  } else {
+    const res = removeReturns({
+      frame, sensor, spoofer, positionXYZ: pos, reach, seed,
+      attackerRangeM: cfg.attackerRangeM ?? 0.2,
+    });
+    keepMask = res.keepMask;
+    replacement = res.replacement;
+    stats = res.stats;
+    // For removal the target is a real object; the caller names which GT box.
+    if (cfg.targetBoxIndex != null && loaded.header.boxes[cfg.targetBoxIndex]) {
+      const b = loaded.header.boxes[cfg.targetBoxIndex];
+      spoofGt = [...b.center, ...b.size, b.yaw];
+    }
+  }
+
+  const cloud = composeCloud({ frame, keepMask, spoof, replacement });
+  const bundle = buildAttackBundle({
+    cloud, sensor,
+    frameId: loaded.header.frameId,
+    dataset: loaded.header.dataset,
+    sceneSlug: entry.slug,
+    spoofGt,
+    attack: { mode, ...cfg },
+    spooferConfig: spoofer,
+    stats: {
+      ...stats,
+      reachableCells: reach.cells.length,
+      envelopeDeg: reach.envelope.feasible ? (2 * reach.envelope.halfWidthAz * 180) / Math.PI : 0,
+      lineOfSightClear: reach.lineOfSight.clear,
+      feasible: reach.feasible,
+    },
+    scheduledAttack: true,
+    createdAt: cfg.createdAt ?? null,
+  });
+
+  emit("bundle-b64", bundleToBase64(bundle));
+  emit("bundle-meta", JSON.stringify({
+    frameId: bundle.header.frameId,
+    scene: entry.slug,
+    mode,
+    nPoints: bundle.header.nPoints,
+    bytes: bundle.byteLength,
+    spoofGt: bundle.header.spoofGt,
+    feasible: reach.feasible,
+    stats: bundle.header.stats,
+  }));
+  done("ok");
+} catch (e) {
+  emit("export-error", (e && e.stack) || String(e));
+  done("error");
+}
+</script>
+</body>
+</html>
