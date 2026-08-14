@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """Convert .atlasattack bundles into the pcdet split format ATLAS already evals.
 
-eval_matrix_kitti.py reads `{segment}_d.pkl` as a list of per-frame dicts and
-touches exactly three fields:
+The two harnesses use DIFFERENT layouts, and getting it wrong fails with an
+opaque "'list' object has no attribute 'get'":
+
+  kitti     eval_matrix_kitti.eval_asr   globs *.pkl and loads ONE FRAME per file
+  nuscenes  eval_matrix_nuscenes.eval_asr loads `{scene}_d.pkl` as a LIST of frames
+
+Either way the harness touches exactly three fields:
 
     fr["points"][:, :4]      the (possibly perturbed) cloud
     fr["frame_id"]           KITTI lidar_idx, e.g. "000001"
@@ -132,6 +137,38 @@ def verify(dpkl_path, attack_type):
     return True
 
 
+def verify_kitti(paths, attack_type):
+    """Verify the one-frame-per-pkl layout eval_matrix_kitti expects."""
+    problems = []
+    n_with_gt = 0
+    for p in paths:
+        fr = pkl.load(open(p, "rb"))
+        if not isinstance(fr, dict):
+            problems.append("%s: expected a single frame dict, got %s - "
+                            "eval_matrix_kitti does fr.get('spoof_gt') and would "
+                            "raise \"'list' object has no attribute 'get'\""
+                            % (os.path.basename(p), type(fr).__name__))
+            continue
+        pts = fr.get("points")
+        if pts is None or pts.dtype != np.float32 or pts.ndim != 2 or pts.shape[1] < 4:
+            problems.append("%s: points must be float32 (N,>=4)" % os.path.basename(p))
+        if "frame_id" not in fr:
+            problems.append("%s: missing frame_id" % os.path.basename(p))
+        if fr.get("spoof_gt") is not None:
+            n_with_gt += 1
+    if n_with_gt == 0:
+        problems.append("no file carries spoof_gt, so eval_asr counts zero "
+                        "targets and reports ASR = nan")
+    if problems:
+        print("VERIFY FAILED:")
+        for pr in problems:
+            print("  -", pr)
+        return False
+    print("verified %d per-frame pkl(s): %d with spoof_gt, points float32 (N,4)"
+          % (len(paths), n_with_gt))
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("bundles", nargs="+", help=".atlasattack files (globs ok)")
@@ -139,6 +176,12 @@ def main():
     ap.add_argument("--annos-dir", default=None, help="defaults to <out-dir>/../annos")
     ap.add_argument("--segment", default=None, help="segment name; default groups by scene slug")
     ap.add_argument("--attack-type", default="inject", choices=["inject", "removal"])
+    ap.add_argument(
+        "--layout", default="auto", choices=["auto", "kitti", "nuscenes"],
+        help="kitti = one frame per .pkl (what eval_matrix_kitti globs); "
+             "nuscenes = a list of frames in {scene}_d.pkl; auto picks from the "
+             "bundle's dataset field",
+    )
     ap.add_argument("--verify", action="store_true")
     a = ap.parse_args()
 
@@ -155,8 +198,10 @@ def main():
 
     segments = defaultdict(list)
     metas = defaultdict(list)
+    datasets_seen = set()
     for p in paths:
         header, pts = read_bundle(p)
+        datasets_seen.add(header.get("dataset"))
         seg = a.segment or header.get("sceneSlug") or "sandbox"
         segments[seg].append(frame_dict(header, pts))
         metas[seg].append(
@@ -169,20 +214,41 @@ def main():
             }
         )
 
+    layout = a.layout
+    if layout == "auto":
+        datasets = {h for h in datasets_seen}
+        layout = "kitti" if datasets == {"kitti"} else "nuscenes"
+        print("layout: %s (auto-detected from dataset=%s)" % (layout, sorted(datasets)))
+
     ok = True
     for seg, frames in segments.items():
-        dpath = os.path.join(dataset_dir, "%s_d.pkl" % seg)
         apath = os.path.join(annos_dir, "%s_a.pkl" % seg)
-        with open(dpath, "wb") as f:
-            pkl.dump(frames, f)
         with open(apath, "wb") as f:
             pkl.dump({"segment": seg, "spoof_annos": metas[seg],
-                      "source": "atlas-sandbox export"}, f)
+                      "source": "atlas-sandbox export", "layout": layout}, f)
         total = sum(fr["points"].shape[0] for fr in frames)
-        print("wrote %s (%d frames, %d points) and %s"
-              % (dpath, len(frames), total, apath))
-        if a.verify:
-            ok = verify(dpath, a.attack_type) and ok
+
+        if layout == "kitti":
+            # one frame per file: eval_matrix_kitti globs *.pkl and pkl.load()s
+            # each into a single frame dict
+            paths = []
+            for i, fr in enumerate(frames):
+                dpath = os.path.join(dataset_dir, "%s_%03d.pkl" % (seg, i))
+                with open(dpath, "wb") as f:
+                    pkl.dump(fr, f)
+                paths.append(dpath)
+            print("wrote %d per-frame pkl(s) for %s (%d points) and %s"
+                  % (len(paths), seg, total, apath))
+            if a.verify:
+                ok = verify_kitti(paths, a.attack_type) and ok
+        else:
+            dpath = os.path.join(dataset_dir, "%s_d.pkl" % seg)
+            with open(dpath, "wb") as f:
+                pkl.dump(frames, f)
+            print("wrote %s (%d frames, %d points) and %s"
+                  % (dpath, len(frames), total, apath))
+            if a.verify:
+                ok = verify(dpath, a.attack_type) and ok
 
     if not ok:
         return 1
