@@ -38,6 +38,52 @@ import { wrapAz, TWO_PI } from "./polar.js";
 
 export const ATTACKER_MODES = ["static", "dynamic"];
 
+/**
+ * The victim's instantaneous azimuthal acceptance.
+ *
+ * A receiver co-boresighted with its emitter only accepts light arriving within a
+ * narrow cone around the direction the beam currently points - a few milliradians
+ * on these sensors, i.e. a fraction of a degree, not degrees. This is the keyhole
+ * an attacker has to shoot through.
+ */
+export function victimApertureRad(sensor) {
+  return sensor.beamDivergenceMrad / 1000;
+}
+
+/**
+ * The arc over which the attacker's light can reach the receiver at all: its
+ * reachable band, widened by half the victim's aperture at each end.
+ */
+export function illuminationWindow({ attackerBearing, envelopeHalfWidthRad, apertureRad }) {
+  return {
+    centerAz: attackerBearing,
+    halfWidthRad: envelopeHalfWidthRad + apertureRad / 2,
+  };
+}
+
+/**
+ * Can the attacker's light get into the receiver right now?
+ *
+ * Keyed off the ATTACKER's own bearing, not the attacked sector's. Those are the
+ * same only when the attacker happens to sit on the sector; a roadside attacker
+ * drifts off it as the ego drives past, and firing has to follow where the
+ * hardware actually stands.
+ *
+ * Note a real attacker may pulse continuously at its PRF - what this predicate
+ * decides is whether the victim can HEAR it, which is what matters.
+ */
+export function attackerCanIlluminate({ sweepAz, attackerBearing, envelopeHalfWidthRad, apertureRad }) {
+  const w = illuminationWindow({ attackerBearing, envelopeHalfWidthRad, apertureRad });
+  let d = wrapAz(sweepAz - w.centerAz);
+  if (d > Math.PI) d -= TWO_PI;
+  return Math.abs(d) <= w.halfWidthRad;
+}
+
+/** Fraction of each revolution during which the attacker can be heard. */
+export function illuminationDuty({ envelopeHalfWidthRad, apertureRad }) {
+  return Math.min(1, (2 * envelopeHalfWidthRad + apertureRad) / TWO_PI);
+}
+
 const DEG = Math.PI / 180;
 
 /** Lift an ego-frame point into world coordinates (for click-to-place). */

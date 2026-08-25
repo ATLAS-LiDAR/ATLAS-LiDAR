@@ -107,6 +107,19 @@ Shift-click the left view to plant it. Its position does **not** change the atta
 unless the physics overlay is on; it reports whether real hardware standing there
 could have produced what ATLAS generated.
 
+**When the attacker can actually be heard.** The victim's receiver is
+co-boresighted with its emitter, so at any instant it only accepts light arriving
+within a narrow cone around the direction the beam currently points - 0.11° on an
+HDL-64E. That keyhole is drawn at the beam, and the attacker's reachable band is
+drawn around **its own** bearing. The attacker is only heard while the one sweeps
+through the other, which for a ±5° band is **2.9% of each revolution**. Outside
+that window its light cannot enter the receiver at all, however hard it fires -
+so the laser goes dim and the readout says *shut out*.
+
+That window is keyed to the attacker's bearing, not the attacked sector's. The two
+coincide only when the attacker happens to sit on the sector; a roadside attacker
+drifts off it.
+
 **Alignment is not the criterion, containment is.** An attacker does not have to
 sit on the azimuth it injects at: its beam saturates a band around its own
 bearing, 6.8° full width at the reference power in Cao et al., widening as
@@ -168,7 +181,7 @@ would not generate. Leaving it off is what makes this a visualizer *of ATLAS*.
 ## Tests
 
 There is no JS runtime on this machine, so the suite runs in headless Chrome and
-reports through the DOM. 409 tests, exit code 0 on green:
+reports through the DOM. 416 tests, exit code 0 on green:
 
 ```sh
 ./run-tests.sh

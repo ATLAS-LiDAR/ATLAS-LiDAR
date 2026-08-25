@@ -2,6 +2,10 @@ import { describe, it, expect } from "./harness.js";
 import { configureSensor } from "../src/core/sensor.js";
 import { configureSpoofer } from "../src/core/spoofer.js";
 import {
+  victimApertureRad,
+  attackerCanIlluminate,
+  illuminationDuty,
+  illuminationWindow,
   ATTACKER_MODES,
   attackerEgoPosition,
   worldFromEgoPoint,
@@ -260,5 +264,79 @@ describe("ATLAS sector widths vs what a real box can reach", () => {
 
   it("needs more power, not better aim, to cover a wide sector", () => {
     expect(coverFor(20, 1e5)).toBeGreaterThan(coverFor(20));
+  });
+});
+
+describe("victim aperture and when the attacker can actually get in", () => {
+  it("reports the victim's instantaneous azimuthal acceptance", () => {
+    // A receiver co-boresighted with its emitter accepts light from a narrow cone
+    // around the current beam direction - a few mrad, not degrees.
+    const a = victimApertureRad(sensor);
+    expect(a).toBeCloseTo(sensor.beamDivergenceMrad / 1000, 1e-12);
+    expect(a / DEG).toBeLessThan(0.5);
+    expect(a).toBeGreaterThan(0);
+  });
+
+  it("lets the attacker in only while the aperture is inside its band", () => {
+    const band = 5 * DEG;
+    const ap = victimApertureRad(sensor);
+    const can = (sweepDeg) =>
+      attackerCanIlluminate({
+        sweepAz: sweepDeg * DEG,
+        attackerBearing: 30 * DEG,
+        envelopeHalfWidthRad: band,
+        apertureRad: ap,
+      });
+    expect(can(30)).toBeTruthy();   // dead on
+    expect(can(34)).toBeTruthy();   // inside the band
+    expect(can(36)).toBeFalsy();    // outside it
+    expect(can(0)).toBeFalsy();     // pointed elsewhere entirely
+    expect(can(210)).toBeFalsy();   // pointed the opposite way
+  });
+
+  it("keys off the ATTACKER's bearing, not the attacked sector's", () => {
+    // The bug this fixes: with a world-fixed attacker the two diverge, and firing
+    // must follow where the hardware actually stands.
+    const ap = victimApertureRad(sensor);
+    const opts = { attackerBearing: 80 * DEG, envelopeHalfWidthRad: 4 * DEG, apertureRad: ap };
+    expect(attackerCanIlluminate({ sweepAz: 80 * DEG, ...opts })).toBeTruthy();
+    // the sector might be aimed at 0, but that is irrelevant to getting in
+    expect(attackerCanIlluminate({ sweepAz: 0, ...opts })).toBeFalsy();
+  });
+
+  it("handles the wrap past zero", () => {
+    const ap = victimApertureRad(sensor);
+    const opts = { attackerBearing: 2 * Math.PI - 0.01, envelopeHalfWidthRad: 3 * DEG, apertureRad: ap };
+    expect(attackerCanIlluminate({ sweepAz: 0.005, ...opts })).toBeTruthy();
+    expect(attackerCanIlluminate({ sweepAz: Math.PI, ...opts })).toBeFalsy();
+  });
+
+  it("is a tiny fraction of each revolution", () => {
+    // The window is the band plus one aperture, so a 5 deg band is ~1.4% of a turn.
+    // That brevity is the point: the attacker is shut out almost all the time.
+    const duty = illuminationDuty({ envelopeHalfWidthRad: 5 * DEG, apertureRad: victimApertureRad(sensor) });
+    expect(duty).toBeGreaterThan(0.01);
+    expect(duty).toBeLessThan(0.04);
+  });
+
+  it("widens the duty with the band and shrinks it to nothing without one", () => {
+    const ap = victimApertureRad(sensor);
+    const wide = illuminationDuty({ envelopeHalfWidthRad: 20 * DEG, apertureRad: ap });
+    const narrow = illuminationDuty({ envelopeHalfWidthRad: 2 * DEG, apertureRad: ap });
+    expect(wide).toBeGreaterThan(narrow);
+    // with no reachable band at all, only the bare aperture lets anything in
+    const none = illuminationDuty({ envelopeHalfWidthRad: 0, apertureRad: ap });
+    expect(none).toBeCloseTo(ap / (2 * Math.PI), 1e-12);
+  });
+
+  it("gives the arc over which illumination is possible, for drawing", () => {
+    const w = illuminationWindow({
+      attackerBearing: 30 * DEG,
+      envelopeHalfWidthRad: 5 * DEG,
+      apertureRad: victimApertureRad(sensor),
+    });
+    expect(w.centerAz).toBeCloseTo(30 * DEG, 1e-12);
+    expect(w.halfWidthRad).toBeGreaterThan(5 * DEG);
+    expect(w.halfWidthRad).toBeCloseTo(5 * DEG + victimApertureRad(sensor) / 2, 1e-12);
   });
 });

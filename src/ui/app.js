@@ -28,7 +28,9 @@ import { loadAtlasFrame, loadManifest, parseAtlasFrame, parseRawLidar, toPointFr
 import { composeCloud } from "../core/compose.js";
 import { buildAttackBundle, downloadBundle, bundleFilename } from "../io/export.js";
 import { pickBoxAt, normalizeBox } from "../core/iou.js";
-import { attackerGeometry, worldFromEgoPoint, ATTACKER_MODES } from "../core/attacker.js";
+import { attackerGeometry, worldFromEgoPoint, ATTACKER_MODES,
+         victimApertureRad, attackerCanIlluminate, illuminationWindow,
+         illuminationDuty } from "../core/attacker.js";
 import { makeAccumulator, resetAccumulator, markSwept, accumulatedColumns,
          advanceSweep, sweepAzToCell, beamInSector,
          sectorDwellTime, pulsesDuringDwell, victimCellsInSector } from "../core/sweep.js";
@@ -513,8 +515,29 @@ function draw() {
     ? beamInSector(S.sweepAz, atlasSector.azCenter, atlasSector.azWidthDeg * DEG)
     : false;
 
-  const laser = S.last.laserPos && atlasSector
-    ? { pos: S.last.laserPos, active: S.spinning ? sectorActive : true, phase: S.laserPhase }
+  // Whether the attacker can be heard right now depends on ITS bearing and its
+  // reachable band, not on where the attack is aimed.
+  const g = S.attackerGeom;
+  const apRad = victimApertureRad(sn);
+  const illum = g
+    ? illuminationWindow({
+        attackerBearing: g.bearing,
+        envelopeHalfWidthRad: g.envelope.feasible ? g.envelope.halfWidthAz : 0,
+        apertureRad: apRad,
+      })
+    : null;
+  const firing = g && S.spinning
+    ? attackerCanIlluminate({
+        sweepAz: S.sweepAz,
+        attackerBearing: g.bearing,
+        envelopeHalfWidthRad: g.envelope.feasible ? g.envelope.halfWidthAz : 0,
+        apertureRad: apRad,
+      })
+    : !!g;
+  S.firing = firing;
+
+  const laser = S.last.laserPos
+    ? { pos: S.last.laserPos, active: firing, phase: S.laserPhase }
     : null;
 
   const boxes = S.showBoxes ? S.loaded.header.boxes || [] : [];
@@ -540,6 +563,8 @@ function draw() {
     atlasSector,
     sectorActive,
     laser,
+    aperture: sweep ? { az: S.sweepAz, halfWidthRad: apRad / 2 } : null,
+    illumWindow: illum,
     targetBox: targetView,
     phantomBox,
     showRemoved: S.showRemoved,
@@ -583,15 +608,22 @@ function updateLaserInfo() {
   const prf = S.last.spoofer.prfHz;
   const pulses = pulsesDuringDwell(prf, dwell);
   const cells = victimCellsInSector(sn, widthRad, elWidthRad);
-  const firing = S.spinning
-    ? beamInSector(S.sweepAz, sec.azCenter, widthRad)
-    : true;
   const g = S.attackerGeom;
+  const firing = S.firing ?? false;
+  const apDeg = (victimApertureRad(sn) * 180) / Math.PI;
+  const duty = g
+    ? illuminationDuty({
+        envelopeHalfWidthRad: g.envelope.feasible ? g.envelope.halfWidthAz : 0,
+        apertureRad: victimApertureRad(sn),
+      })
+    : 0;
   const cov = g ? g.coverage : null;
   const covPct = cov ? (cov.fraction * 100).toFixed(0) : "—";
   const covClass = !cov ? "" : cov.withinEnvelope ? "" : cov.partial ? "warn" : "err";
   el.innerHTML =
-    `${firing ? "<b>FIRING</b>" : "idle"} · ${S.attackerMode === "static" ? "roadside" : "vehicle-mounted"}` +
+    `${firing ? "<b>IN APERTURE — heard</b>" : "shut out"} · ` +
+    `victim aperture ${apDeg.toFixed(2)}° · heard ${(duty * 100).toFixed(1)}% of each turn<br>` +
+    `${S.attackerMode === "static" ? "roadside" : "vehicle-mounted"}` +
     ` at ${g ? g.standoff.toFixed(1) : "?"} m, bearing ${g ? g.bearingDeg.toFixed(0) : "?"}°<br>` +
     `reach ±${g ? g.envelopeHalfWidthDeg.toFixed(1) : "?"}° · attack ${sec.azWidthDeg.toFixed(1)}° ` +
     `at ${cov ? cov.offsetDeg.toFixed(0) : "?"}° off-axis → ` +

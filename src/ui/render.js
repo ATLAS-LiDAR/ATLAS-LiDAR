@@ -37,6 +37,8 @@ export const PALETTE = Object.freeze({
   spoofer: [221, 59, 59],
   reach: [221, 59, 59],
   atlasSector: [147, 51, 234],
+  aperture: [40, 60, 120],
+  window: [221, 59, 59],
   box: [110, 120, 104],
   target: [221, 59, 59],
   phantom: [221, 59, 59],
@@ -121,6 +123,9 @@ export function renderBEV(canvas, {
   reach = null,
   atlasSector = null,
   laser = null,
+  aperture = null,   // {az, halfWidthRad} the victim's instantaneous acceptance
+  illumWindow = null, // {centerAz, halfWidthRad} where the attacker can be heard
+
   spooferPos = null,
   targetBox = null,
   phantomBox = null,
@@ -257,6 +262,48 @@ export function renderBEV(canvas, {
   for (const b of boxes) strokeBox(ctx, v, b, rgb(PALETTE.box, 0.7), 1);
   if (targetBox) strokeBox(ctx, v, targetBox, rgb(PALETTE.target, 0.95), 2.2);
   if (phantomBox) strokeBox(ctx, v, phantomBox, rgb(PALETTE.phantom, 0.9), 1.8, [5, 3]);
+
+  // The arc over which the attacker can be heard at all: its reachable band
+  // widened by the victim's aperture, centred on the ATTACKER's own bearing (not
+  // the attacked sector's - a roadside attacker drifts off that).
+  if (illumWindow) {
+    const R = rangeM * 1.5;
+    ctx.fillStyle = rgb(PALETTE.window, 0.13);
+    ctx.strokeStyle = rgb(PALETTE.window, 0.5);
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(v.cx, v.cy);
+    const hw = illumWindow.halfWidthRad;
+    for (let a = -hw; a <= hw; a += Math.max(hw / 24, 1e-4)) {
+      const ang = illumWindow.centerAz + a;
+      const [sx, sy] = v.px(Math.cos(ang) * R, Math.sin(ang) * R);
+      ctx.lineTo(sx, sy);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // The victim's instantaneous azimuthal aperture: the keyhole the attacker has
+  // to shoot through. It is only a few mrad, so it is drawn with a minimum
+  // on-screen width to stay visible - the true value is in the readout.
+  if (aperture) {
+    const R = Math.min(W, H) / 2;
+    const minRad = (2.5 / R) * 2; // ~2.5 px at the outer edge
+    const hw = Math.max(aperture.halfWidthRad, minRad);
+    ctx.fillStyle = rgb(PALETTE.aperture, 0.28);
+    ctx.beginPath();
+    ctx.moveTo(v.cx, v.cy);
+    for (let a = -hw; a <= hw; a += Math.max(hw / 8, 1e-5)) {
+      const ang = aperture.az + a;
+      const [sx, sy] = v.px(Math.cos(ang) * rangeM * 1.5, Math.sin(ang) * rangeM * 1.5);
+      ctx.lineTo(sx, sy);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
 
   // The attacker's hardware, firing at the victim's receiver.
   //
