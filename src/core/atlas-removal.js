@@ -48,6 +48,65 @@ export const AHFR_DEFAULTS = Object.freeze({
 
 const DEG = Math.PI / 180;
 
+/**
+ * Per-wedge removal probability, keyed by azimuth width, "from the A-HFR paper".
+ * Verbatim from generate_data_removal_nuscenes.py and generate_data_kitti.py,
+ * which BOTH override removal.py's 0.96 function default with this table. Note it
+ * is not monotonic: az20 removes most completely, and the wide wedges drop to 0.90
+ * (which is why az50 and az60 score almost identically in the paper).
+ */
+export const PRR = Object.freeze({ 10: 0.97, 20: 1.00, 30: 0.99, 40: 0.98, 50: 0.90, 60: 0.90 });
+
+/** The only widths ATLAS accepts (argparse choices=sorted(PRR)). */
+export const ATLAS_AZ_WIDTHS = Object.freeze([10, 20, 30, 40, 50, 60]);
+
+/** p_remove for a width, snapping off-table values to the nearest tabulated one. */
+export function pRemoveForWidth(azWidthDeg) {
+  let best = ATLAS_AZ_WIDTHS[0];
+  for (const w of ATLAS_AZ_WIDTHS) {
+    if (Math.abs(w - azWidthDeg) < Math.abs(best - azWidthDeg)) best = w;
+  }
+  return PRR[best];
+}
+
+/**
+ * Tracking constants, per dataset, because they genuinely differ.
+ *
+ * nuScenes keyframes are 2 Hz, so the constant-velocity prediction extrapolates
+ * over 0.5 s and the spatial gate is widened to 12 m - its own comment records
+ * that tracked cars step a median 2.2 m and up to 6.3 m between keyframes, so
+ * Waymo's 6 m gate clips the tail.
+ */
+export const NUSCENES_TRACK = Object.freeze({
+  desiredRange: 40.0, minRange: 10.0, negative: true, dt: 0.5, maxStep: 12.0,
+});
+export const WAYMO_TRACK = Object.freeze({
+  desiredRange: 60.0, minRange: 20.0, negative: true, dt: 0.1, maxStep: 6.0,
+});
+
+/**
+ * KITTI's removal target rule, which is NOT select_initial_target: the nearest
+ * car in front beyond `minX`, measured by footprint distance only.
+ * generate_data_kitti.py: `cars[cars[:,0] > 10.0]` then `argmin(|xy|)`.
+ */
+export function selectNearestFrontCar(boxes, { minX = 10.0, targetClass = 1, classCol = -1 } = {}) {
+  if (!boxes || boxes.length === 0) return { index: null, box: null };
+  let best = null;
+  let bestD = Infinity;
+  for (let i = 0; i < boxes.length; i++) {
+    const b = boxes[i];
+    const label = Math.round(classCol < 0 ? b[b.length + classCol] : b[classCol]);
+    if (label !== targetClass) continue;
+    if (!(b[0] > minX)) continue;
+    const d = Math.hypot(b[0], b[1]); // 2D, as ATLAS measures it
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best == null ? { index: null, box: null } : { index: best, box: boxes[best].slice() };
+}
+
 /** numpy-ish rng with uniform and normal draws, seeded and reproducible. */
 export function makeAtlasRng(seed = 42) {
   let a = seed >>> 0;

@@ -39,7 +39,7 @@
 import { cartToSpherical, azimuthCellIndex, nearestBeamIndex, cellKey } from "./polar.js";
 import { reachableCells } from "./spoofer.js";
 import { minRelayRange, syncHitProbability, tofBudget } from "./tof.js";
-import { assignIntensity } from "./intensity.js";
+import { assignIntensity, atlasRangeConditionedIntensity } from "./intensity.js";
 
 /** Deterministic PRNG (mulberry32) so a seed reproduces a whole attack. */
 function makeRng(seed) {
@@ -142,6 +142,25 @@ export function injectPhantom({
 
   const dz = groundAnchor ? groundAnchorZ({ frame, phantom, radiusM: groundRadiusM }) : 0;
 
+  // ATLAS assigns intensity BEFORE resolving occlusion, to EVERY phantom point,
+  // from the single band containing the phantom's MEAN range (r_avg). Doing it
+  // afterwards on survivors, or per point, both diverge from that.
+  let meanR = 0;
+  for (let i = 0; i < nReq; i++) {
+    meanR += Math.hypot(phantom.x[i], phantom.y[i], phantom.z[i] + dz);
+  }
+  meanR = nReq > 0 ? meanR / nReq : 0;
+  const intensityAll =
+    intensityMode === "range-conditioned"
+      ? atlasRangeConditionedIntensity({
+          dataset: ds, meanRange: meanR, count: nReq, next,
+          fallback: phantom.intensity,
+        })
+      : assignIntensity({
+          mode: intensityMode, dataset: ds, ranges: new Float64Array(nReq),
+          next, constantValue: constantIntensity,
+        });
+
   // --- gate every candidate ----------------------------------------------
   const claimed = new Map(); // cell -> {r, x, y, z}  (physics mode)
   const candidates = []; // ordered list            (ATLAS-faithful mode)
@@ -191,13 +210,13 @@ export function injectPhantom({
       if (prev !== undefined) {
         rejected.cellConflict++;
         // A first/strongest-return sensor reports the nearer echo.
-        if (r < prev.r) claimed.set(key, { r, x: px, y: py, z: pz });
+        if (r < prev.r) claimed.set(key, { r, x: px, y: py, z: pz, ii: intensityAll[i] });
         continue;
       }
-      claimed.set(key, { r, x: px, y: py, z: pz });
+      claimed.set(key, { r, x: px, y: py, z: pz, ii: intensityAll[i] });
     } else {
       // No dedupe: ATLAS keeps every phantom point independently.
-      candidates.push({ key, r, x: px, y: py, z: pz });
+      candidates.push({ key, r, x: px, y: py, z: pz, ii: intensityAll[i] });
     }
   }
 
@@ -207,6 +226,7 @@ export function injectPhantom({
   const keptY = [];
   const keptZ = [];
   const keptR = [];
+  const keptI = [];
   let suppressed = 0;
 
   const resolveList = atlasFaithful
@@ -240,17 +260,12 @@ export function injectPhantom({
     keptY.push(p.y);
     keptZ.push(p.z);
     keptR.push(p.r);
+    keptI.push(p.ii);
   }
 
   const nInj = keptX.length;
   const spoofR = Float64Array.from(keptR);
-  const intensity = assignIntensity({
-    mode: intensityMode,
-    dataset: ds,
-    ranges: spoofR,
-    next,
-    constantValue: constantIntensity,
-  });
+  const intensity = Float32Array.from(keptI);
 
   const spoofAz = new Float64Array(nInj);
   const spoofEl = new Float64Array(nInj);
@@ -300,6 +315,7 @@ export function injectPhantom({
       atlasFaithful,
       relayFloor,
       budget,
+      meanPhantomRange: meanR,
       firingLimited: reachInfo.firingLimited,
     },
   };

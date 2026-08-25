@@ -163,6 +163,32 @@ Two consequences worth watching, both measured in the sandbox:
   and the wider `removal_azNN` splits less still - consistent with
   ATLAS_REAL_WORLD_VALIDATION.md labelling az50/az60 capability extrapolations.
 
+## Where the constants come from
+
+Every ATLAS constant the sandbox uses is transcribed from the source, and pinned
+by `test/atlas-constants.test.js` so drift is caught. The ones that are easy to get
+wrong:
+
+| | value | source |
+|---|---|---|
+| `p_remove` | **derived from `az_width`**: `{10:0.97, 20:1.00, 30:0.99, 40:0.98, 50:0.90, 60:0.90}` | both drivers override `removal.py`'s 0.96 default with this table |
+| allowed `az_width` | only 10/20/30/40/50/60 | `argparse choices=sorted(PRR)` |
+| injection window, nuScenes | 15–20 m ahead, ±3 m lateral, yaw ±0.2 | `place_trace_relative` |
+| injection window, **KITTI** | **12–30 m ahead, ±6 m lateral, yaw ±0.3** | `kitti_atlas_common.place_trace` — wider, set by the camera FOV |
+| removal target, **KITTI** | **nearest car in front beyond 10 m, by footprint range** — not `select_initial_target` at all | `generate_data_kitti.py` |
+| removal target, nuScenes | `desired_range=40`, `min_range=10`, `negative=True` | `generate_data_removal_nuscenes.py` |
+| tracking, nuScenes | `dt=0.5`, `max_step=12.0` | `NUSC_KEYFRAME_DT`, `NUSC_MAX_STEP_M` |
+| tracking, Waymo (for contrast) | `dt=0.1`, `max_step=6.0`, `desired_range=60` | `generate_data_removal.py` |
+| world-fixed anchor | the **last** frame of the attack span | `anchor_pose = idx_to_pose[max(span)]` |
+| phantom intensity | **one** band from the phantom's mean range, applied to every point *before* occlusion; left untouched past the last band | `r_avg = avg_spoof_range(spf)` then `get_stats_for_range` |
+| track lost | **gives up** for the rest of the sequence | `if new_box is None: break` |
+
+Not transcribable: **numpy's RNG stream cannot be reproduced in JavaScript**, so a
+given seed selects a different trace, offset and yaw than the pipeline would. Draw
+order and distributions match, so behaviour is statistically the same and
+self-consistent, but never bit-identical. The trace pool is also a 500-trace subset
+of each library (the full count is recorded in each file's header).
+
 ## Fidelity notes
 
 Things ATLAS does that a tidier implementation would get wrong, kept and

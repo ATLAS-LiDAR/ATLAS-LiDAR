@@ -3,42 +3,42 @@
     "file": "nuscenes-easy.atlastrace",
     "dataset": "nuscenes",
     "difficulty": "easy",
-    "nTraces": 200,
-    "medianPoints": 249
+    "nTraces": 500,
+    "medianPoints": 200
   },
   {
     "file": "nuscenes-medium.atlastrace",
     "dataset": "nuscenes",
     "difficulty": "medium",
-    "nTraces": 200,
-    "medianPoints": 26
+    "nTraces": 500,
+    "medianPoints": 25
   },
   {
     "file": "nuscenes-hard.atlastrace",
     "dataset": "nuscenes",
     "difficulty": "hard",
-    "nTraces": 200,
+    "nTraces": 500,
     "medianPoints": 7
   },
   {
     "file": "kitti-easy.atlastrace",
     "dataset": "kitti",
     "difficulty": "easy",
-    "nTraces": 200,
-    "medianPoints": 690
+    "nTraces": 500,
+    "medianPoints": 604
   },
   {
     "file": "kitti-medium.atlastrace",
     "dataset": "kitti",
     "difficulty": "medium",
-    "nTraces": 200,
-    "medianPoints": 93
+    "nTraces": 500,
+    "medianPoints": 95
   },
   {
     "file": "kitti-hard.atlastrace",
     "dataset": "kitti",
     "difficulty": "hard",
-    "nTraces": 200,
-    "medianPoints": 20
+    "nTraces": 500,
+    "medianPoints": 21
   }
 ]

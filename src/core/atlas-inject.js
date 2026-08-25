@@ -25,13 +25,22 @@
  * the same and self-consistent within the sandbox.
  */
 
-/** ATLAS's ego-relative placement window. */
-export const RELATIVE_OFFSET = Object.freeze({
-  xMin: 15,
-  xMax: 20,
-  yAbs: 3,
-  yawAbs: 0.2,
+/**
+ * Ego-relative placement window, PER DATASET, because they differ.
+ *
+ * nuScenes (nuscenes_atlas_common.place_trace_relative): uniform(15,20) ahead,
+ * uniform(-3,3) lateral, yaw uniform(-0.2,0.2).
+ * KITTI (kitti_atlas_common.place_trace): uniform(12,30) ahead, uniform(-6,6)
+ * lateral, yaw uniform(-0.3,0.3) - wider, because its annotations only cover the
+ * camera field of view and x runs to 70 m.
+ */
+export const RELATIVE_OFFSET_BY_DATASET = Object.freeze({
+  nuscenes: Object.freeze({ xMin: 15, xMax: 20, yAbs: 3, yawAbs: 0.2 }),
+  kitti: Object.freeze({ xMin: 12, xMax: 30, yAbs: 6, yawAbs: 0.3 }),
 });
+
+/** Default window (nuScenes), kept as a named export for back-compatibility. */
+export const RELATIVE_OFFSET = RELATIVE_OFFSET_BY_DATASET.nuscenes;
 
 /** Seeded rng with the draws the placement needs. */
 export function makeAtlasRng(seed = 42) {
@@ -108,17 +117,19 @@ export function placeTraceRelative(traces, {
   traceIdx = null,
   offsetXY = null,
   yaw = null,
+  dataset = "nuscenes",
 } = {}) {
   if (!traces || traces.length === 0) {
     throw new Error("cannot place a phantom from an empty trace library");
   }
   const r = rng || makeAtlasRng(seed);
+  const W = RELATIVE_OFFSET_BY_DATASET[dataset] || RELATIVE_OFFSET_BY_DATASET.nuscenes;
 
   // Draw order matches place_trace_relative. The draws happen even when a value
   // is overridden, so a given seed keeps producing the same *other* values.
   const drawnIdx = r.integers(traces.length);
-  const drawnX = r.uniform(RELATIVE_OFFSET.xMin, RELATIVE_OFFSET.xMax);
-  const drawnY = r.uniform(-RELATIVE_OFFSET.yAbs, RELATIVE_OFFSET.yAbs);
+  const drawnX = r.uniform(W.xMin, W.xMax);
+  const drawnY = r.uniform(-W.yAbs, W.yAbs);
 
   const idx = traceIdx == null ? drawnIdx : Math.max(0, Math.min(traces.length - 1, traceIdx));
   const trace = traces[idx];
@@ -127,7 +138,7 @@ export function placeTraceRelative(traces, {
 
   const { points: centered, box: centeredBox } = centerTrace(trace);
 
-  const drawnYaw = r.uniform(-RELATIVE_OFFSET.yawAbs, RELATIVE_OFFSET.yawAbs);
+  const drawnYaw = r.uniform(-W.yawAbs, W.yawAbs);
   const yawNew = yaw == null ? drawnYaw : yaw;
   const c = Math.cos(yawNew);
   const s = Math.sin(yawNew);
@@ -163,6 +174,7 @@ export function placeTraceRelative(traces, {
       yaw: yawNew,
       nTracePoints: n,
       placement: offsetXY || yaw != null || traceIdx != null ? "user" : "atlas-random",
+      dataset,
       traceRange: trace.range ?? null,
     },
   };
@@ -183,13 +195,14 @@ export function placeTraceGlobal(traces, {
   traceIdx = null,
   offsetXY = null,
   yaw = null,
+  dataset = "nuscenes",
   anchorPose = null,
 } = {}) {
   if (!anchorPose) throw new Error("placeTraceGlobal needs an anchorPose (ego->global)");
 
   // identical to the relative placement, then lifted
   const rel = placeTraceRelative(traces, {
-    seed, windowMin, windowMax, rng, traceIdx, offsetXY, yaw,
+    seed, windowMin, windowMax, rng, traceIdx, offsetXY, yaw, dataset,
   });
 
   const points = {

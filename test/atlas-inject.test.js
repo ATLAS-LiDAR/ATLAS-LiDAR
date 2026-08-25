@@ -27,9 +27,11 @@ describe("trace library loading", () => {
     const lib = await loadTraceLibrary("../assets/traces/nuscenes-medium.atlastrace");
     expect(lib.header.dataset).toBe("nuscenes");
     expect(lib.header.difficulty).toBe("medium");
-    expect(lib.header.nTraces).toBe(200);
-    expect(lib.header.counts).toHaveLength(200);
-    expect(lib.header.boxes).toHaveLength(200);
+    // Don't pin the subset size - it is an export choice. Pin the invariants.
+    expect(lib.header.nTraces).toBeGreaterThan(100);
+    expect(lib.header.nTraces).toBeLessThanOrEqual(lib.header.nTracesInLibrary);
+    expect(lib.header.counts).toHaveLength(lib.header.nTraces);
+    expect(lib.header.boxes).toHaveLength(lib.header.nTraces);
     expect(lib.header.counts.reduce((a, b) => a + b, 0)).toBe(lib.header.totalPoints);
   });
 
@@ -61,7 +63,7 @@ describe("trace library loading", () => {
 
   it("keeps points near their own box, so the box really describes the trace", async () => {
     const lib = await loadTraceLibrary("../assets/traces/nuscenes-medium.atlastrace");
-    for (const k of [0, 7, 50, 199]) {
+    for (const k of [0, 7, 50, lib.header.nTraces - 1]) {
       const t = getTrace(lib, k);
       const [bx, by] = t.box;
       const diag = Math.hypot(t.box[3], t.box[4]);

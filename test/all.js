@@ -25,5 +25,6 @@ import "./atlas-inject.test.js";
 import "./pose.test.js";
 import "./schedule.test.js";
 import "./attacker.test.js";
+import "./atlas-constants.test.js";
 
 await runAndReport();

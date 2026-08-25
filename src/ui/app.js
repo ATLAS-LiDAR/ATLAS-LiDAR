@@ -18,8 +18,9 @@
 import { configureSensor, listSensors, SENSORS } from "../core/sensor.js";
 import { configureSpoofer, listSpoofers, SPOOFERS, reachableCells } from "../core/spoofer.js";
 import { injectPhantom } from "../core/inject.js";
-import { ahfrRemoval, ahfrAim, selectInitialTarget, matchWithVelocity, makeAtlasRng,
-         AHFR_DEFAULTS, sectorMask } from "../core/atlas-removal.js";
+import { ahfrRemoval, ahfrAim, selectInitialTarget, selectNearestFrontCar,
+         matchWithVelocity, makeAtlasRng, pRemoveForWidth, ATLAS_AZ_WIDTHS,
+         NUSCENES_TRACK, AHFR_DEFAULTS, sectorMask } from "../core/atlas-removal.js";
 import { placeTraceRelative, placeTraceGlobal, transformSpoofToEgoFrame } from "../core/atlas-inject.js";
 import { loadSequence, loadSequenceManifest, frameOfSequence } from "../io/sequence.js";
 import { buildAttackSchedule } from "../core/schedule.js";
@@ -90,6 +91,7 @@ const S = {
   layerId: 0,
   azWidthDeg: AHFR_DEFAULTS.azWidthDeg,
   pRemove: AHFR_DEFAULTS.pRemove,
+  pRemoveOverride: false,
   forceActive: false,
   overlay: false,
   spooferId: "cao2023",
@@ -110,6 +112,10 @@ function setStatus(msg, cls = "") {
 }
 
 const sensor = () => configureSensor(S.sensorId, { hz: S.hz });
+/** Which dataset's ATLAS constants apply to the loaded frame. */
+const datasetOf = () => (S.loaded?.header.dataset === "kitti" ? "kitti" : "nuscenes");
+/** p_remove is derived from az_width unless explicitly overridden. */
+const effectivePRemove = () => (S.pRemoveOverride ? S.pRemove : pRemoveForWidth(S.azWidthDeg));
 const spoofer = () => configureSpoofer(S.spooferId);
 
 /** GT boxes of the current frame, as ATLAS class-tagged vectors. */
@@ -228,7 +234,12 @@ const frameAttacked = () =>
 async function prepareSequenceAttack() {
   if (!S.isSequence) return;
   const frames = S.seq.header.frames;
-  const anchor = S.schedule ? S.schedule.attacked[0] ?? 0 : 0;
+  // ATLAS anchors a world-fixed phantom on the LAST frame of the attack span
+  // (`anchor_pose = idx_to_pose[max(span)]`), not the first.
+  const attacked = S.schedule ? S.schedule.attacked : null;
+  const anchor = attacked && attacked.length
+    ? attacked[attacked.length - 1]
+    : frames.length - 1;
 
   // world-fixed phantom, placed in the anchor keyframe
   if (S.attack === "inject" && S.placement === "global") {
@@ -237,6 +248,7 @@ async function prepareSequenceAttack() {
       seed: S.seed,
       traceIdx: S.traceIdx,
       offsetXY: S.phantomAt,
+      dataset: datasetOf(),
       anchorPose: frames[anchor].pose,
     });
   } else {
@@ -249,27 +261,38 @@ async function prepareSequenceAttack() {
     const track = [];
     let prev = null;
     let state = null;
+    let lost = false;
     for (let k = 0; k < frames.length; k++) {
       const boxes = atlasBoxesOf(frames[k].boxes);
       let targetBox = null;
-      if (prev == null) {
+      if (lost) {
+        // ATLAS's track_sequence does `if new_box is None: break` - once the
+        // target is lost it gives up for the rest of the sequence rather than
+        // re-acquiring a different vehicle.
+        targetBox = null;
+      } else if (k === 0) {
         const chosen = S.targetIndex >= 0 && boxes[S.targetIndex]
           ? boxes[S.targetIndex]
           : selectInitialTarget(boxes, {
-              desiredRange: AHFR_DEFAULTS.desiredRange, tol: AHFR_DEFAULTS.tol,
-              targetClass: 1, minRange: AHFR_DEFAULTS.minRange,
+              desiredRange: NUSCENES_TRACK.desiredRange, tol: AHFR_DEFAULTS.tol,
+              targetClass: 1, minRange: NUSCENES_TRACK.minRange,
+              negative: NUSCENES_TRACK.negative,
             }).box;
         targetBox = chosen || null;
+        if (!targetBox) lost = true;
       } else {
-        targetBox = matchWithVelocity(prev, null, boxes, { dt }).box;
+        targetBox = matchWithVelocity(prev, null, boxes, {
+          dt, maxStep: NUSCENES_TRACK.maxStep,
+        }).box;
+        if (!targetBox) lost = true;
       }
       const incoming = state;
       if (targetBox) {
         const aim = ahfrAim({ targetBox, state, rng: makeAtlasRng(S.seed + k) });
         state = aim.state;
       }
-      track.push({ targetBox, incomingState: incoming });
-      prev = targetBox;
+      track.push({ targetBox, incomingState: incoming, lost });
+      if (targetBox) prev = targetBox;
     }
     S.track = track;
   } else {
@@ -289,12 +312,19 @@ function atlasBoxesOf(boxes) {
 
 /** ATLAS's own target choice. */
 function autoTarget(announce = true) {
-  const { index } = selectInitialTarget(atlasBoxes(), {
-    desiredRange: AHFR_DEFAULTS.desiredRange,
-    tol: AHFR_DEFAULTS.tol,
-    targetClass: 1,
-    minRange: AHFR_DEFAULTS.minRange,
-  });
+  // The two generators pick differently, so follow whichever applies.
+  // KITTI (single frames): nearest car in front beyond 10 m, by footprint range.
+  // nuScenes (sequences): select_initial_target at 40 m, min 10 m, negative=True.
+  const boxes = atlasBoxes();
+  const { index } = datasetOf() === "kitti" && !S.isSequence
+    ? selectNearestFrontCar(boxes, { minX: 10.0, targetClass: 1 })
+    : selectInitialTarget(boxes, {
+        desiredRange: NUSCENES_TRACK.desiredRange,
+        tol: AHFR_DEFAULTS.tol,
+        targetClass: 1,
+        minRange: NUSCENES_TRACK.minRange,
+        negative: NUSCENES_TRACK.negative,
+      });
   S.targetIndex = index == null ? -1 : index;
   updateTargetInfo();
   if (announce) {
@@ -414,7 +444,7 @@ async function recompute() {
           frame,
           targetBox: tb,
           azWidthDeg: S.azWidthDeg,
-          pRemove: S.pRemove,
+          pRemove: effectivePRemove(),
           forceActive: S.forceActive,
           state: tracked ? tracked.incomingState : null,
           rng: makeAtlasRng(S.seed + S.frameIndex),
@@ -805,7 +835,9 @@ function labels() {
   $("hzVal").textContent = S.hz + " Hz";
   $("sensorSpec").textContent = `${sn.nBeams}b · ${(sn.azRes / DEG).toFixed(3)}°`;
   $("azwVal").textContent = S.azWidthDeg + "°";
-  $("prVal").textContent = S.pRemove.toFixed(2);
+  $("prVal").textContent =
+    effectivePRemove().toFixed(2) + (S.pRemoveOverride ? " (override)" : " (from az_width)");
+  $("azwVal").textContent = S.azWidthDeg + "°";
   $("speedVal").textContent = S.speed.toFixed(2) + "×";
   $("rangeVal").textContent = S.viewRange + " m";
   $("standoffVal").textContent = S.standoff + " m";
@@ -920,8 +952,14 @@ export async function boot() {
     };
   };
   bind("hz", (v) => { S.hz = v; S.frame = null; });
-  bind("azWidth", (v) => { S.azWidthDeg = v; });
-  bind("pRemove", (v) => { S.pRemove = v; });
+  bind("azWidth", (v) => {
+    // ATLAS accepts only the tabulated widths (argparse choices=sorted(PRR))
+    S.azWidthDeg = ATLAS_AZ_WIDTHS.reduce(
+      (b, w) => (Math.abs(w - v) < Math.abs(b - v) ? w : b), ATLAS_AZ_WIDTHS[0]
+    );
+    $("azWidth").value = String(S.azWidthDeg);
+  });
+  bind("pRemove", (v) => { S.pRemove = v; S.pRemoveOverride = true; });
   bind("viewRange", (v) => { S.viewRange = v; });
   $("speed").oninput = (e) => {
     S.speed = Math.pow(10, parseFloat(e.target.value));

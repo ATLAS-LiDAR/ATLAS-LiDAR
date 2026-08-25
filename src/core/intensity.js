@@ -63,6 +63,36 @@ export function sampleIntensity({ dataset, r, next }) {
 }
 
 /**
+ * ATLAS's range-conditioned intensity, faithfully.
+ *
+ * Both drivers compute ONE mean range over the whole phantom
+ * (`r_avg = avg_spoof_range(spf)`), look up the single band containing it, and
+ * draw every point from that band. Sampling per point instead would mix bands
+ * across a phantom straddling a boundary.
+ *
+ * If the mean range falls past the last band, `get_stats_for_range` returns None
+ * and the caller simply does not overwrite the intensity column - so the trace's
+ * own recorded intensity survives. `fallback` is that original intensity.
+ */
+export function atlasRangeConditionedIntensity({ dataset, meanRange, count, next, fallback }) {
+  const spec = INTENSITY_BANDS[dataset];
+  if (!spec) throw new Error('no intensity statistics for dataset "' + dataset + '"');
+  const bands = spec.bands;
+  const last = bands[bands.length - 1];
+  if (meanRange >= last.rMax || meanRange < bands[0].rMin) {
+    // outside the tabulated range: leave it alone, as ATLAS does
+    return fallback ? Float32Array.from(fallback.slice(0, count)) : new Float32Array(count);
+  }
+  const b = bandForRange(dataset, meanRange);
+  const out = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const v = Math.exp(b.logMu + b.logSigma * gaussian(next));
+    out[i] = Math.min(b.p99, Math.max(b.p1, v));
+  }
+  return out;
+}
+
+/**
  * Intensity for every phantom point.
  * @returns {Float32Array}
  */
