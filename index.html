@@ -105,8 +105,23 @@
     <aside>
       <div class="group">
         <p class="glabel">Scene</p>
-        <label class="field"><div class="cap"><span>Recorded frame</span><span class="val" id="sceneSpec"></span></div>
+        <label class="field"><div class="cap"><span>Recorded data</span><span class="val" id="sceneSpec"></span></div>
           <select id="scene"></select></label>
+        <div id="seqOpts" style="display:none">
+          <label class="field"><div class="cap"><span>Keyframe</span><span class="val" id="frameVal"></span></div>
+            <input type="range" id="frameIdx" min="0" max="19" step="1" value="0"></label>
+          <div class="seg" role="group" aria-label="phantom placement">
+            <button id="placeEgo" aria-pressed="true">Follows ego</button>
+            <button id="placeWorld" aria-pressed="false">World-fixed</button>
+          </div>
+          <label class="field"><div class="cap"><span>Attack schedule</span><span class="val" id="schedSpec"></span></div>
+            <select id="schedMode">
+              <option value="always">Every keyframe</option>
+              <option value="continuous">Continuous burst (ATLAS)</option>
+              <option value="intermittent">Intermittent (ATLAS)</option>
+            </select></label>
+          <div class="laser" id="seqInfo">—</div>
+        </div>
       </div>
 
       <div class="group">

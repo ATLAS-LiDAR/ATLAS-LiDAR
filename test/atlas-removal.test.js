@@ -11,6 +11,7 @@ import {
   selectInitialTarget,
   matchWithVelocity,
   ahfrRemoval,
+  ahfrAim,
   makeAtlasRng,
   AHFR_DEFAULTS,
 } from "../src/core/atlas-removal.js";
@@ -433,5 +434,46 @@ describe("matchWithVelocity — port of ATLAS's constant-velocity tracker", () =
     const m = matchWithVelocity(prev, null, curr, { dt: 0.5 });
     expect(m.box[0]).toBeCloseTo(22, 1e-9);
     expect(m.box[1]).toBeCloseTo(0.5, 1e-9);
+  });
+});
+
+describe("ahfrAim", () => {
+  const tb = [30, 5, 0, 4.2, 1.8, 1.6, 0];
+
+  it("agrees with the aim ahfrRemoval computes for the same seed and state", () => {
+    // This is what lets a sequence propagate aim state cheaply: running the aim
+    // alone must land exactly where the full removal would.
+    for (const seed of [1, 5, 99]) {
+      const aim = ahfrAim({ targetBox: tb, rng: makeAtlasRng(seed) });
+      const full = ahfrRemoval({
+        frame: frameOf(sensor, [atDir(0, 0, 30)]),
+        targetBox: tb,
+        rng: makeAtlasRng(seed),
+      });
+      expect(aim.azCenter).toBeCloseTo(full.meta.azCenterRad, 1e-12);
+      expect(aim.elCenter).toBeCloseTo(full.meta.elCenterRad, 1e-12);
+      expect(aim.scanGateProb).toBeCloseTo(full.meta.scanGateProb, 1e-12);
+    }
+  });
+
+  it("propagates state across frames with the servo limit applied", () => {
+    let state = null;
+    const aims = [];
+    // target jumps 40 degrees each frame; the aim may only move 15
+    for (let k = 0; k < 4; k++) {
+      const ang = k * 40 * DEG;
+      const box = [30 * Math.cos(ang), 30 * Math.sin(ang), 0, 4.2, 1.8, 1.6, 0];
+      const a = ahfrAim({ targetBox: box, state, rng: makeAtlasRng(1 + k) });
+      aims.push(a.azCenter);
+      state = a.state;
+    }
+    // ATLAS adds the aim jitter AFTER the servo clamp, so a realized step can
+    // exceed max_az_step_deg by a few jitter sigma (0.05 deg each, on both this
+    // frame's and the previous frame's draw). Allow that rather than pretending
+    // the clamp is a hard bound on the observed motion.
+    const slack = 15 * DEG + 6 * 0.05 * DEG;
+    for (let k = 1; k < aims.length; k++) {
+      expect(Math.abs(wrapToPi(aims[k] - aims[k - 1]))).toBeLessThanOrEqual(slack);
+    }
   });
 });

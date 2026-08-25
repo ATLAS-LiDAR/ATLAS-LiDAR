@@ -242,6 +242,47 @@ export function matchWithVelocity(prevBox, prevPrevBox, currBoxes, {
 }
 
 /**
+ * The aim step alone: where the spoofer points this frame, and how likely the
+ * frame-level scan gate is to fire.
+ *
+ * Split out of ahfrRemoval so a sequence can propagate aim state across
+ * keyframes without masking points in every intermediate frame. Because ATLAS
+ * seeds per frame (`default_rng(seed + gidx)` in run_injection), running this and
+ * then ahfrRemoval with the same seed consumes the same draws and yields the same
+ * aim - there is no divergence between the propagated state and the rendered one.
+ */
+export function ahfrAim({
+  targetBox,
+  state = null,
+  maxAzStepDeg = AHFR_DEFAULTS.maxAzStepDeg,
+  fixElevation = AHFR_DEFAULTS.fixElevation,
+  centerJitterStdDeg = AHFR_DEFAULTS.centerJitterStdDeg,
+  rng = null,
+}) {
+  const r = rng || makeAtlasRng(42);
+  const st = state || {};
+  const { az: rawAz, el: rawEl } = boxCenterToAzEl(targetBox);
+  const targetRangeM = boxCenterRange(targetBox);
+
+  let azCenter =
+    st.azCenter === undefined ? rawAz : clampAngleStep(st.azCenter, rawAz, maxAzStepDeg * DEG);
+  const elCenter = st.elCenter === undefined ? rawEl : fixElevation ? st.elCenter : rawEl;
+
+  // jitter is drawn in DEGREES then converted, as in removal.py
+  azCenter = wrapToPi(azCenter + r.normal(0.0, centerJitterStdDeg) * DEG);
+
+  return {
+    azCenter,
+    elCenter,
+    rawAz,
+    rawEl,
+    targetRangeM,
+    scanGateProb: ahfrGateProb(targetRangeM),
+    state: { azCenter, elCenter },
+  };
+}
+
+/**
  * One frame of A-HFR removal.
  *
  * @param {object} frame        PointFrame (uses its precomputed az/el)
@@ -266,23 +307,12 @@ export function ahfrRemoval({
   rng = null,
 }) {
   const r = rng || makeAtlasRng(42);
-  const st = state || {};
 
-  const { az: rawAz, el: rawEl } = boxCenterToAzEl(targetBox);
-  const targetRangeM = boxCenterRange(targetBox);
-  const scanGateProb = ahfrGateProb(targetRangeM);
-
-  let azCenter =
-    st.azCenter === undefined
-      ? rawAz
-      : clampAngleStep(st.azCenter, rawAz, maxAzStepDeg * DEG);
-  const elCenter =
-    st.elCenter === undefined ? rawEl : fixElevation ? st.elCenter : rawEl;
-
-  // jitter is drawn in DEGREES then converted, as in removal.py
-  azCenter = wrapToPi(azCenter + r.normal(0.0, centerJitterStdDeg) * DEG);
-
-  const newState = { azCenter, elCenter };
+  const aim = ahfrAim({
+    targetBox, state, maxAzStepDeg, fixElevation, centerJitterStdDeg, rng: r,
+  });
+  const { azCenter, elCenter, rawAz, rawEl, targetRangeM, scanGateProb } = aim;
+  const newState = aim.state;
   const keepMask = new Uint8Array(frame.count).fill(1);
 
   const baseMeta = {

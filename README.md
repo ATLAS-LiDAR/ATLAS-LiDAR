@@ -30,6 +30,8 @@ A configuration is shareable, and headless-drivable, through the URL:
 ```
 index.html?mode=remove&scene=kitti-parked-row&azWidth=40&forceActive=1
 index.html?mode=inject&difficulty=hard&spin=0
+index.html?scene=nuscenes-scene0&placement=global&frame=12
+index.html?scene=nuscenes-scene0&schedule=intermittent
 ```
 
 ## What v2 shows
@@ -55,6 +57,39 @@ recorded cloud has already been sampled, so there is nothing left to raycast -
 but the scan lattice was recovered, so the animation walks a prefix of the
 azimuth-sorted index, which is an O(1) lookup per rendered frame.
 
+## Driving sequences
+
+Static single frames remain the default. Selecting a **driving sequence** instead
+plays ATLAS's attack across keyframes, which is where its temporal machinery
+becomes visible.
+
+**Sequences are nuScenes only.** KITTI's object-detection split on disk is a set
+of independent frames with no temporal ordering and no ego poses, so it cannot
+make one. nuScenes keyframes carry `ref_from_car` and `car_from_global`, which
+compose into ego->global. The cost is a sparser 32-beam cloud (~34k points vs
+KITTI's ~120k).
+
+Two placement policies, and the difference only exists in a sequence:
+
+| | |
+|---|---|
+| **Follows ego** (`place_trace_relative`) | the phantom sits 15-20 m ahead in *every* frame, so it travels with the vehicle |
+| **World-fixed** (`place_trace_global`) | placed once in the anchor keyframe, lifted into world coordinates, and projected back down into each later frame - so the ego drives past it, and it recedes and gets more obliquely occluded as it goes |
+
+**Removal tracks its target** across keyframes with `match_with_velocity`: a
+constant-velocity prediction gated on distance, class and size. The aim is
+rate-limited between frames like a servo, so the sector visibly sweeps to follow
+a moving vehicle, and the readout says when the track is **LOST**.
+
+**The attack schedule** (`build_single_attack_schedule`) can be every keyframe, a
+continuous burst, or intermittent - one attack per sequence, flickering on and off
+with the attacked-frame count held equal to the continuous case.
+
+One display simplification, stated because it is not physical: **one displayed
+revolution advances one keyframe.** nuScenes keyframes are 2 Hz samples of a 20 Hz
+spin, so the real gap between them is ten revolutions. Compressing it keeps the
+two clocks legible at once.
+
 ## Fidelity notes
 
 Things ATLAS does that a tidier implementation would get wrong, kept and
@@ -71,6 +106,14 @@ documented in the ports:
 - `center_trace` transforms **xy only**; z keeps the height at which the object
   was originally observed and is corrected later by ground anchoring. Recentring z
   would double-correct and sink the phantom.
+- `match_with_velocity` defaults to `dt=0.1` for Waymo, but nuScenes keyframes are
+  2 Hz. Its own docstring warns that using 0.1 there makes the constant-velocity
+  prediction 5x too short, so a fast vehicle exceeds `max_step` and the track is
+  dropped **silently**. The sequence header carries `dtSec = 0.5` and the port
+  uses it.
+- The aim jitter is applied AFTER the servo clamp, so an observed frame-to-frame
+  aim step can exceed `max_az_step_deg` by a few jitter sigma. The clamp bounds
+  the commanded step, not the realized one.
 - `spoof_frame` evaluates each phantom point **independently, with no per-cell
   dedupe**, so an ATLAS phantom can carry more than one return per (az, beam)
   cell. The sandbox reports it (a typical easy-trace phantom lands around 2.4
@@ -88,7 +131,7 @@ would not generate. Leaving it off is what makes this a visualizer *of ATLAS*.
 ## Tests
 
 There is no JS runtime on this machine, so the suite runs in headless Chrome and
-reports through the DOM. 323 tests, exit code 0 on green:
+reports through the DOM. 378 tests, exit code 0 on green:
 
 ```sh
 ./run-tests.sh
@@ -102,7 +145,9 @@ nonzero (see the tripwire procedure in `test/harness.selftest.js`).
 ```
 src/core/
   ATLAS ports (v2 - what the visualizer shows by default)
-    atlas-inject.js   center_trace + place_trace_relative
+    atlas-inject.js   center_trace, place_trace_relative, place_trace_global
+    schedule.js       build_single_attack_schedule (continuous / intermittent)
+    pose.js           rigid ego<->global transforms for sequences
     atlas-removal.js  A-HFR: spoof_frame_ahfr_roadside, ahfr_gate_prob,
                       select_initial_target, the rectangular sector
     inject.js         spoof_frame occlusion; atlasFaithful mode skips v1's gates
@@ -125,9 +170,12 @@ src/core/
     compose.js        the cloud a victim would report after an attack
 src/io/       .atlasframe frames, .atlastrace libraries, upload parsing, export
 src/ui/       render.js (BEV + range image + sweep), app.js (state, wiring)
+src/io/       .atlasframe frames, .atlasseq sequences, .atlastrace libraries
 tools/        gen_sensor_assets.py, export_frames.py, export_traces.py,
-              export_headless.py, import_attack.py, run_eval.sh, parse_dom.py
-assets/       frames/ (5 real frames) + traces/ (6 ATLAS trace libraries)
+              export_sequence.py, export_headless.py, import_attack.py,
+              run_eval.sh, parse_dom.py
+assets/       frames/ (5 static frames) + traces/ (6 trace libraries)
+              + sequences/ (2 nuScenes driving sequences)
 ```
 
 Numbers are generated, not transcribed: `tools/gen_sensor_assets.py` emits beam

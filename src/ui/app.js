@@ -18,8 +18,11 @@
 import { configureSensor, listSensors, SENSORS } from "../core/sensor.js";
 import { configureSpoofer, listSpoofers, SPOOFERS, reachableCells } from "../core/spoofer.js";
 import { injectPhantom } from "../core/inject.js";
-import { ahfrRemoval, selectInitialTarget, AHFR_DEFAULTS, sectorMask } from "../core/atlas-removal.js";
-import { placeTraceRelative } from "../core/atlas-inject.js";
+import { ahfrRemoval, ahfrAim, selectInitialTarget, matchWithVelocity, makeAtlasRng,
+         AHFR_DEFAULTS, sectorMask } from "../core/atlas-removal.js";
+import { placeTraceRelative, placeTraceGlobal, transformSpoofToEgoFrame } from "../core/atlas-inject.js";
+import { loadSequence, loadSequenceManifest, frameOfSequence } from "../io/sequence.js";
+import { buildAttackSchedule } from "../core/schedule.js";
 import { loadTraceLibrary, loadTraceManifest, allTraces } from "../io/traces.js";
 import { loadAtlasFrame, loadManifest, parseAtlasFrame, parseRawLidar, toPointFrame } from "../io/atlasframe.js";
 import { composeCloud } from "../core/compose.js";
@@ -60,6 +63,16 @@ const S = {
   phantomAt: null,     // null = let ATLAS sample the offset
   standoff: 18,
   laserPhase: 0,
+  // sequence mode
+  isSequence: false,
+  seq: null,
+  seqManifest: [],
+  frameIndex: 0,
+  placement: "relative",   // relative = follows ego, global = world-fixed
+  schedMode: "always",
+  schedule: null,
+  globalPhantom: null,     // {points, box} in world coords, placed once
+  track: null,             // per-keyframe {targetBox, incomingState}
   azWidthDeg: AHFR_DEFAULTS.azWidthDeg,
   pRemove: AHFR_DEFAULTS.pRemove,
   forceActive: false,
@@ -84,13 +97,9 @@ function setStatus(msg, cls = "") {
 const sensor = () => configureSensor(S.sensorId, { hz: S.hz });
 const spoofer = () => configureSpoofer(S.spooferId);
 
-/** GT boxes as ATLAS 8-vectors [x,y,z,dx,dy,dz,yaw,class]. */
+/** GT boxes of the current frame, as ATLAS class-tagged vectors. */
 function atlasBoxes() {
-  return (S.loaded?.header.boxes || []).map((b) => [
-    b.center[0], b.center[1], b.center[2],
-    b.size[0], b.size[1], b.size[2], b.yaw,
-    labelToClass(b.label),
-  ]);
+  return atlasBoxesOf(S.loaded?.header.boxes || []);
 }
 
 function targetBox() {
@@ -122,9 +131,18 @@ function ensureFrame() {
 }
 
 async function selectScene(slug) {
+  const seqEntry = S.seqManifest.find((m) => m.slug === slug);
+  if (seqEntry) return selectSequence(seqEntry);
+
   const entry = S.manifest.find((m) => m.slug === slug);
   if (!entry) return;
   setStatus("Loading " + entry.label + "…");
+  S.isSequence = false;
+  S.seq = null;
+  S.schedule = null;
+  S.globalPhantom = null;
+  S.track = null;
+  $("seqOpts").style.display = "none";
   S.loaded = await loadAtlasFrame("assets/frames/" + entry.file);
   S.sceneSlug = slug;
   if (SENSORS[S.loaded.header.sensor]) {
@@ -137,6 +155,117 @@ async function selectScene(slug) {
   await traceLib();
   labels();
   await recompute();
+}
+
+/** Load a driving sequence and prepare its schedule, phantom and track. */
+async function selectSequence(entry) {
+  setStatus("Loading " + entry.label + "…");
+  S.seq = await loadSequence("assets/sequences/" + entry.file);
+  S.isSequence = true;
+  S.sceneSlug = entry.slug;
+  S.frameIndex = 0;
+  $("seqOpts").style.display = "";
+  $("frameIdx").max = String(S.seq.header.nFrames - 1);
+  $("frameIdx").value = "0";
+  S.sensorId = S.seq.header.sensor;
+  $("sensor").value = S.sensorId;
+  await loadKeyframe(0);
+  await traceLib();
+  buildSchedule();
+  await prepareSequenceAttack();
+  labels();
+  await recompute();
+}
+
+async function loadKeyframe(k) {
+  S.frameIndex = Math.max(0, Math.min(S.seq.header.nFrames - 1, k));
+  S.loaded = frameOfSequence(S.seq, S.frameIndex);
+  S.frame = null;
+  ensureFrame();
+}
+
+function buildSchedule() {
+  if (!S.isSequence || S.schedMode === "always") {
+    S.schedule = null;
+    return;
+  }
+  S.schedule = buildAttackSchedule({
+    nFrames: S.seq.header.nFrames,
+    mode: S.schedMode,
+    seed: S.seed,
+    label: S.sceneSlug,
+  });
+}
+
+const frameAttacked = () =>
+  !S.isSequence || !S.schedule ? true : S.schedule.isAttacked(S.frameIndex);
+
+/**
+ * Precompute what persists across keyframes:
+ *  - a world-fixed phantom, placed once in the anchor frame then projected down
+ *  - the removal target's track, plus the aim state entering each frame
+ * Both are cheap (boxes only, no point work), so scrubbing stays instant.
+ */
+async function prepareSequenceAttack() {
+  if (!S.isSequence) return;
+  const frames = S.seq.header.frames;
+  const anchor = S.schedule ? S.schedule.attacked[0] ?? 0 : 0;
+
+  // world-fixed phantom, placed in the anchor keyframe
+  if (S.attack === "inject" && S.placement === "global") {
+    const { traces } = await traceLib();
+    S.globalPhantom = placeTraceGlobal(traces, {
+      seed: S.seed,
+      traceIdx: S.traceIdx,
+      offsetXY: S.phantomAt,
+      anchorPose: frames[anchor].pose,
+    });
+  } else {
+    S.globalPhantom = null;
+  }
+
+  // target track + aim state, frame by frame
+  if (S.attack === "remove") {
+    const dt = S.seq.header.dtSec;
+    const track = [];
+    let prev = null;
+    let state = null;
+    for (let k = 0; k < frames.length; k++) {
+      const boxes = atlasBoxesOf(frames[k].boxes);
+      let targetBox = null;
+      if (prev == null) {
+        const chosen = S.targetIndex >= 0 && boxes[S.targetIndex]
+          ? boxes[S.targetIndex]
+          : selectInitialTarget(boxes, {
+              desiredRange: AHFR_DEFAULTS.desiredRange, tol: AHFR_DEFAULTS.tol,
+              targetClass: 1, minRange: AHFR_DEFAULTS.minRange,
+            }).box;
+        targetBox = chosen || null;
+      } else {
+        targetBox = matchWithVelocity(prev, null, boxes, { dt }).box;
+      }
+      const incoming = state;
+      if (targetBox) {
+        const aim = ahfrAim({ targetBox, state, rng: makeAtlasRng(S.seed + k) });
+        state = aim.state;
+      }
+      track.push({ targetBox, incomingState: incoming });
+      prev = targetBox;
+    }
+    S.track = track;
+  } else {
+    S.track = null;
+  }
+}
+
+/** GT boxes -> ATLAS 10-vectors [x,y,z,dx,dy,dz,yaw,vx,vy,class]. */
+function atlasBoxesOf(boxes) {
+  return boxes.map((b) => [
+    b.center[0], b.center[1], b.center[2],
+    b.size[0], b.size[1], b.size[2], b.yaw,
+    b.velocity ? b.velocity[0] : 0, b.velocity ? b.velocity[1] : 0,
+    labelToClass(b.label),
+  ]);
 }
 
 /** ATLAS's own target choice. */
@@ -192,13 +321,27 @@ async function recompute() {
   let secMask = null;
   let centerAz = 0;
 
+  const attackedNow = frameAttacked();
+
   if (S.attack === "inject") {
     const { traces } = await traceLib();
-    const placed = placeTraceRelative(traces, {
-      seed: S.seed,
-      traceIdx: S.traceIdx,
-      offsetXY: S.phantomAt,
-    });
+    let placed;
+    if (S.isSequence && S.placement === "global" && S.globalPhantom) {
+      // world-fixed: project the once-placed phantom into THIS keyframe
+      const ego = transformSpoofToEgoFrame(
+        S.globalPhantom.points, S.globalPhantom.box, S.loaded.header.pose
+      );
+      placed = { points: ego.points, box: ego.box, anno: { ...S.globalPhantom.anno } };
+    } else {
+      placed = placeTraceRelative(traces, {
+        seed: S.seed,
+        traceIdx: S.traceIdx,
+        offsetXY: S.phantomAt,
+      });
+    }
+    if (!attackedNow) {
+      placed = { ...placed, points: { x: new Float64Array(0), y: new Float64Array(0), z: new Float64Array(0), intensity: new Float32Array(0) } };
+    }
     phantomBox = { center: placed.box.slice(0, 3), size: placed.box.slice(3, 6), yaw: placed.box[6] };
     result = injectPhantom({
       frame,
@@ -235,21 +378,30 @@ async function recompute() {
     atlasSector = { azCenter: centerAz, azWidthDeg: (spanRad * 180) / Math.PI };
     result.elWidthDeg = 16;
   } else {
-    const tb = targetBox();
+    const tracked = S.isSequence && S.track ? S.track[S.frameIndex] : null;
+    const tb = tracked ? tracked.targetBox : targetBox();
     if (!tb) {
       setStatus("Pick a vehicle to hide — click one in the left view, or use auto-select.", "warn");
       S.last = { sensor: sn, reach, keepMask: null, spoof: null, result: null, phantomBox: null, atlasSector: null, secMask: null, centerAz: 0 };
       draw();
       return;
     }
-    result = ahfrRemoval({
-      frame,
-      targetBox: tb,
-      azWidthDeg: S.azWidthDeg,
-      pRemove: S.pRemove,
-      forceActive: S.forceActive,
-      seed: S.seed,
-    });
+    result = attackedNow
+      ? ahfrRemoval({
+          frame,
+          targetBox: tb,
+          azWidthDeg: S.azWidthDeg,
+          pRemove: S.pRemove,
+          forceActive: S.forceActive,
+          state: tracked ? tracked.incomingState : null,
+          rng: makeAtlasRng(S.seed + S.frameIndex),
+        })
+      : ahfrRemoval({
+          frame, targetBox: tb, azWidthDeg: S.azWidthDeg, pRemove: 0,
+          forceActive: false, state: tracked ? tracked.incomingState : null,
+          rng: makeAtlasRng(S.seed + S.frameIndex),
+        });
+    if (!attackedNow) result.meta.inactiveReason = "schedule_gap";
     keepMask = result.keepMask;
     atlasSector = { azCenter: result.meta.azCenterRad, azWidthDeg: S.azWidthDeg };
     secMask = result.meta.sectorMask || sectorMask(frame, result.meta.azCenterRad, result.meta.elCenterRad, S.azWidthDeg, result.meta.elWidthDeg);
@@ -320,6 +472,7 @@ function draw() {
     showRemoved: S.showRemoved,
   });
   updateLaserInfo();
+  updateSeqInfo();
   renderRangeImage($("cvLattice"), {
     frame,
     sensor: sn,
@@ -355,6 +508,29 @@ function updateLaserInfo() {
     `at ${S.standoff} m<br>beam crosses its ${sec.azWidthDeg.toFixed(1)}° window in ` +
     `${(dwell * 1000).toFixed(2)} ms<br>${pulses.toLocaleString()} pulses @ ${(prf / 1000).toFixed(0)} kHz ` +
     `vs ${cells.toLocaleString()} victim cells`;
+}
+
+/** Where we are in the sequence, and what the schedule says about it. */
+function updateSeqInfo() {
+  if (!S.isSequence) return;
+  const h = S.seq.header;
+  const t = (S.frameIndex * h.dtSec).toFixed(1);
+  const sched = S.schedule
+    ? `${S.schedule.meta.mode} · L=${S.schedule.meta.attackLenL} of ${h.nFrames}` +
+      (S.schedule.meta.nGaps ? ` · ${S.schedule.meta.nGaps} gaps` : "") +
+      (S.schedule.meta.degenerate ? " · degenerate" : "")
+    : "every keyframe";
+  const on = frameAttacked();
+  $("seqInfo").innerHTML =
+    `frame ${S.frameIndex + 1}/${h.nFrames} · t=${t}s · ${h.dtSec.toFixed(2)}s apart (${h.hzKeyframe} Hz)<br>` +
+    `${on ? "<b>ATTACK ON</b>" : "clean frame"} · ${sched}<br>` +
+    `phantom ${S.placement === "global" ? "world-fixed" : "follows ego"}` +
+    (S.attack === "remove" && S.track
+      ? ` · track ${S.track[S.frameIndex].targetBox ? "held" : "LOST"}`
+      : "");
+  $("schedSpec").textContent = S.schedule
+    ? `${S.schedule.meta.attackLenL}/${h.nFrames} frames`
+    : `${h.nFrames} frames`;
 }
 
 function stat(k, v, cls = "") {
@@ -438,11 +614,27 @@ function loop(t) {
   const dt = lastT ? Math.min(0.05, (t - lastT) / 1000) : 0;
   lastT = t;
   if (S.spinning && S.frame && S.last) {
+    const prevAz = S.sweepAz;
     S.sweepAz = advanceSweep(S.sweepAz, dt, S.last.sensor, S.speed);
     S.laserPhase = (S.laserPhase + dt * 3) % 1;
+    // One displayed revolution advances one keyframe. nuScenes keyframes are 2 Hz
+    // samples of a 20 Hz spin, so this compresses the gap between them - it keeps
+    // the two clocks legible rather than pretending to be real time.
+    if (S.isSequence && S.sweepAz < prevAz && !S.seqBusy) {
+      S.seqBusy = true;
+      advanceKeyframe(1).finally(() => { S.seqBusy = false; });
+    }
     draw();
   }
   requestAnimationFrame(loop);
+}
+
+async function advanceKeyframe(delta) {
+  if (!S.isSequence) return;
+  const next = (S.frameIndex + delta + S.seq.header.nFrames) % S.seq.header.nFrames;
+  await loadKeyframe(next);
+  $("frameIdx").value = String(next);
+  await recompute();
 }
 
 /* -------------------------------- wiring --------------------------------- */
@@ -456,6 +648,9 @@ function labels() {
   $("speedVal").textContent = S.speed.toFixed(2) + "×";
   $("rangeVal").textContent = S.viewRange + " m";
   $("standoffVal").textContent = S.standoff + " m";
+  if (S.isSequence && S.seq) {
+    $("frameVal").textContent = `${S.frameIndex + 1} / ${S.seq.header.nFrames}`;
+  }
   const lib = S.traceLibs.get(
     (S.loaded?.header.dataset === "kitti" ? "kitti" : "nuscenes") + "-" + S.difficulty
   );
@@ -500,11 +695,31 @@ export async function boot() {
 
   S.manifest = await loadManifest("assets/frames/manifest.json");
   S.traceManifest = await loadTraceManifest("assets/traces/manifest.json");
+  try {
+    S.seqManifest = await loadSequenceManifest("assets/sequences/manifest.json");
+  } catch {
+    S.seqManifest = [];
+  }
+
+  const gStatic = document.createElement("optgroup");
+  gStatic.label = "Static frames";
   for (const m of S.manifest) {
     const o = document.createElement("option");
     o.value = m.slug;
     o.textContent = m.label;
-    $("scene").appendChild(o);
+    gStatic.appendChild(o);
+  }
+  $("scene").appendChild(gStatic);
+  if (S.seqManifest.length) {
+    const gSeq = document.createElement("optgroup");
+    gSeq.label = "Driving sequences";
+    for (const m of S.seqManifest) {
+      const o = document.createElement("option");
+      o.value = m.slug;
+      o.textContent = `${m.label} · ${m.nFrames} frames`;
+      gSeq.appendChild(o);
+    }
+    $("scene").appendChild(gSeq);
   }
 
   $("scene").onchange = (e) => selectScene(e.target.value);
@@ -519,11 +734,12 @@ export async function boot() {
     recompute();
   };
 
-  seg(["atkInject", "atkRemove"], (i) => {
+  seg(["atkInject", "atkRemove"], async (i) => {
     S.attack = i === 0 ? "inject" : "remove";
     $("injectOpts").style.display = i === 0 ? "" : "none";
     $("removeOpts").style.display = i === 0 ? "none" : "";
-    recompute();
+    await prepareSequenceAttack();
+    await recompute();
   });
   seg(["dEasy", "dMedium", "dHard"], (i) => {
     S.difficulty = ["easy", "medium", "hard"][i];
@@ -561,12 +777,14 @@ export async function boot() {
     $("spooferRow").style.display = S.overlay ? "" : "none";
     recompute();
   };
-  $("reroll").onclick = () => {
+  $("reroll").onclick = async () => {
     // back to ATLAS's own sampling for trace, offset and yaw
     S.seed = (S.seed * 1103515245 + 12345) & 0x7fffffff;
     S.traceIdx = null;
     S.phantomAt = null;
-    recompute();
+    buildSchedule();
+    await prepareSequenceAttack();
+    await recompute();
   };
   $("traceIdx").oninput = (e) => {
     S.traceIdx = parseInt(e.target.value, 10);
@@ -581,10 +799,30 @@ export async function boot() {
     labels();
     recompute();
   };
+  $("frameIdx").oninput = async (e) => {
+    await loadKeyframe(parseInt(e.target.value, 10));
+    labels();
+    await recompute();
+  };
+  seg(["placeEgo", "placeWorld"], async (i) => {
+    S.placement = i === 0 ? "relative" : "global";
+    await prepareSequenceAttack();
+    await recompute();
+  });
+  $("schedMode").onchange = async (e) => {
+    S.schedMode = e.target.value;
+    buildSchedule();
+    await prepareSequenceAttack();
+    await recompute();
+  };
   $("tracePrev").onclick = () => stepTrace(-1);
   $("traceNext").onclick = () => stepTrace(1);
   bind("standoff", (v) => { S.standoff = v; });
-  $("autoTarget").onclick = () => { autoTarget(true); recompute(); };
+  $("autoTarget").onclick = async () => {
+    autoTarget(true);
+    await prepareSequenceAttack();
+    await recompute();
+  };
 
   // click: hit a vehicle -> aim at it; otherwise move the spoofer
   const cv = $("cvClean");
@@ -597,11 +835,15 @@ export async function boot() {
     if (S.attack === "inject") {
       // place the phantom where you clicked
       S.phantomAt = [wx, wy];
+      prepareSequenceAttack().then(recompute);
+      return;
     } else {
       const hit = pickBoxAt(wx, wy, boxes);
       if (hit >= 0) {
         S.targetIndex = hit;
         updateTargetInfo();
+        prepareSequenceAttack().then(recompute);
+        return;
       } else if (S.overlay) {
         S.spooferPos = [wx, wy, S.spooferPos[2]];
       }
@@ -663,7 +905,9 @@ export async function boot() {
   // driven headlessly: ?mode=remove&scene=kitti-parked-row&difficulty=hard
   const q = new URLSearchParams(location.search);
   const scene = q.get("scene");
-  const initial = S.manifest.find((m) => m.slug === scene) ? scene : S.manifest[0].slug;
+  const known = (sl) =>
+    S.manifest.some((m) => m.slug === sl) || S.seqManifest.some((m) => m.slug === sl);
+  const initial = known(scene) ? scene : S.manifest[0].slug;
   if (q.has("difficulty") && ["easy", "medium", "hard"].includes(q.get("difficulty"))) {
     S.difficulty = q.get("difficulty");
     $(["dEasy", "dMedium", "dHard"][["easy", "medium", "hard"].indexOf(S.difficulty)])
@@ -682,6 +926,16 @@ export async function boot() {
     $("overlay").checked = true;
     $("spooferRow").style.display = "";
   }
+  if (q.has("schedule") && ["always", "continuous", "intermittent"].includes(q.get("schedule"))) {
+    S.schedMode = q.get("schedule");
+    $("schedMode").value = S.schedMode;
+  }
+  if (q.get("placement") === "global") {
+    S.placement = "global";
+    $("placeEgo").setAttribute("aria-pressed", "false");
+    $("placeWorld").setAttribute("aria-pressed", "true");
+  }
+  if (q.has("frame")) S.pendingFrame = parseInt(q.get("frame"), 10);
   if (q.get("spin") === "0") {
     S.spinning = false;
     $("fullBtn").click();
@@ -690,6 +944,12 @@ export async function boot() {
   $("scene").value = initial;
   labels();
   await selectScene(initial);
+
+  if (S.isSequence && S.pendingFrame != null) {
+    await loadKeyframe(S.pendingFrame);
+    $("frameIdx").value = String(S.frameIndex);
+    await recompute();
+  }
 
   if (q.get("mode") === "remove") {
     S.attack = "remove";
@@ -701,6 +961,7 @@ export async function boot() {
       S.targetIndex = parseInt(q.get("target"), 10);
       updateTargetInfo();
     }
+    await prepareSequenceAttack();
     await recompute();
   }
 
