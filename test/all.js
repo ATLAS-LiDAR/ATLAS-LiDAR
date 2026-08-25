@@ -19,5 +19,8 @@ import "./phantom.test.js";
 import "./iou.test.js";
 import "./detect.test.js";
 import "./export.test.js";
+import "./atlas-removal.test.js";
+import "./sweep.test.js";
+import "./atlas-inject.test.js";
 
 await runAndReport();
