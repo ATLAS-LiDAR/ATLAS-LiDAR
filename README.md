@@ -32,6 +32,8 @@ index.html?mode=remove&scene=kitti-parked-row&azWidth=40&forceActive=1
 index.html?mode=inject&difficulty=hard&spin=0
 index.html?scene=nuscenes-scene0&placement=global&frame=12
 index.html?scene=nuscenes-scene0&schedule=intermittent
+index.html?scene=nuscenes-scene0&attacker=dynamic&frame=8
+index.html?sweptTo=120            # freeze the sweep mid-fill
 ```
 
 ## What v2 shows
@@ -90,6 +92,41 @@ revolution advances one keyframe.** nuScenes keyframes are 2 Hz samples of a 20 
 spin, so the real gap between them is ten revolutions. Compressing it keeps the
 two clocks legible at once.
 
+## The attacker's hardware
+
+ATLAS models no attacker position at all - injection is a trace placed in the
+cloud, removal is a sector aimed at a target - so drawing hardware means choosing
+geometry ATLAS does not specify. Two mountings:
+
+| | |
+|---|---|
+| **Roadside** | a box on the ground. It holds ONE world position, so as you drive past its bearing and range both change: it approaches, is passed, and recedes. That apparent motion is the ego moving, not the attacker. |
+| **Follows ego** | vehicle-mounted or a chase vehicle. Fixed offset from the ego, so its geometry never changes. An ego-fixed phantom (`place_trace_relative`, always 15-20 m ahead) implicitly needs this mounting. |
+
+Shift-click the left view to plant it. Its position does **not** change the attack
+unless the physics overlay is on; it reports whether real hardware standing there
+could have produced what ATLAS generated.
+
+**Alignment is not the criterion, containment is.** An attacker does not have to
+sit on the azimuth it injects at: its beam saturates a band around its own
+bearing, 6.8° full width at the reference power in Cao et al., widening as
+`sqrt(log power)` and quoted up to a demonstrated 45° maximum attack angle. So the
+readout asks what fraction of the attacked sector falls inside that band, and
+drift degrades coverage gradually instead of flipping a boolean.
+
+Two consequences worth watching, both measured in the sandbox:
+
+- **The reachable band narrows as the attacker recedes**, because received power
+  goes as 1/d². Driving past a roadside attacker on a real sequence: standoff
+  18 → 54 m, bearing 11° → −69°, reach ±5.2° → ±2.4°, coverage 100% → ~45%. For a
+  world-fixed phantom sited near the attacker the two recede *together*, so the
+  angular offset stays small and the coverage loss is mostly radial - a power
+  problem, not an aiming problem.
+- **ATLAS's default 20° removal sector is ~3× the measured 6.8° envelope.** Even
+  perfectly aimed at reference power, a real box covers only about a third of it,
+  and the wider `removal_azNN` splits less still - consistent with
+  ATLAS_REAL_WORLD_VALIDATION.md labelling az50/az60 capability extrapolations.
+
 ## Fidelity notes
 
 Things ATLAS does that a tidier implementation would get wrong, kept and
@@ -131,7 +168,7 @@ would not generate. Leaving it off is what makes this a visualizer *of ATLAS*.
 ## Tests
 
 There is no JS runtime on this machine, so the suite runs in headless Chrome and
-reports through the DOM. 378 tests, exit code 0 on green:
+reports through the DOM. 409 tests, exit code 0 on green:
 
 ```sh
 ./run-tests.sh
@@ -147,6 +184,8 @@ src/core/
   ATLAS ports (v2 - what the visualizer shows by default)
     atlas-inject.js   center_trace, place_trace_relative, place_trace_global
     schedule.js       build_single_attack_schedule (continuous / intermittent)
+  attacker placement (visualization only; ATLAS specifies no position)
+    attacker.js       roadside vs vehicle-mounted, envelope containment
     pose.js           rigid ego<->global transforms for sequences
     atlas-removal.js  A-HFR: spoof_frame_ahfr_roadside, ahfr_gate_prob,
                       select_initial_target, the rectangular sector

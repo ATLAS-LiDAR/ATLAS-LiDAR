@@ -161,10 +161,15 @@
 
       <div class="group">
         <p class="glabel">Attacker hardware</p>
+        <div class="seg" role="group" aria-label="attacker mounting">
+          <button id="atkStatic" aria-pressed="true">Roadside</button>
+          <button id="atkDynamic" aria-pressed="false">Follows ego</button>
+        </div>
         <div class="laser" id="laserInfo">—</div>
         <label class="field"><div class="cap"><span>Standoff</span><span class="val" id="standoffVal"></span></div>
           <input type="range" id="standoff" min="4" max="60" step="1" value="18"></label>
-        <p class="note">Where the attacker stands is a visualization choice — ATLAS does not model it, and it does not change the attack unless the physics overlay is on.</p>
+        <p class="note"><b>Roadside</b> holds one world position, so it approaches and recedes as you drive past — and its aim drifts off the attacked sector. <b>Follows ego</b> is vehicle-mounted and holds its geometry. Shift-click the left view to move it.</p>
+        <p class="note">ATLAS models no attacker position, so this does not change the attack unless the physics overlay is on — it reports whether real hardware standing there could have produced it.</p>
       </div>
 
       <div class="group">

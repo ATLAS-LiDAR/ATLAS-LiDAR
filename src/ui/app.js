@@ -28,6 +28,7 @@ import { loadAtlasFrame, loadManifest, parseAtlasFrame, parseRawLidar, toPointFr
 import { composeCloud } from "../core/compose.js";
 import { buildAttackBundle, downloadBundle, bundleFilename } from "../io/export.js";
 import { pickBoxAt, normalizeBox } from "../core/iou.js";
+import { attackerGeometry, worldFromEgoPoint, ATTACKER_MODES } from "../core/attacker.js";
 import { makeAccumulator, resetAccumulator, markSwept, accumulatedColumns,
          advanceSweep, sweepAzToCell, beamInSector,
          sectorDwellTime, pulsesDuringDwell, victimCellsInSector } from "../core/sweep.js";
@@ -64,6 +65,9 @@ const S = {
   phantomAt: null,     // null = let ATLAS sample the offset
   standoff: 18,
   laserPhase: 0,
+  attackerMode: "static",   // roadside box vs vehicle-mounted
+  attackerWorld: null,      // fixed world position of a roadside attacker
+  attackerGeom: null,
   // sequence mode
   isSequence: false,
   seq: null,
@@ -430,10 +434,30 @@ async function recompute() {
     }
   }
 
-  // The attacker sits on the sector's own bearing: the only placement for which
-  // the laser path and the affected cells are geometrically consistent. ATLAS
-  // does not model a position, so this is a visualization choice only.
-  const laserPos = [Math.cos(centerAz) * S.standoff, Math.sin(centerAz) * S.standoff];
+  // Where the hardware actually stands. A roadside attacker holds a world
+  // position, so as the ego drives past its bearing and range both change and its
+  // aim drifts off the attacked sector - which is physically real, and judged
+  // against its reachable envelope rather than against exact alignment.
+  const sectorWidthRad = atlasSector ? atlasSector.azWidthDeg * DEG : 0;
+  if (S.attackerMode === "static" && !S.attackerWorld) {
+    // default: standing where the attack is aimed, in world coordinates
+    S.attackerWorld = worldFromEgoPoint(
+      [Math.cos(centerAz) * S.standoff, Math.sin(centerAz) * S.standoff, 0],
+      S.loaded.header.pose || null
+    );
+  }
+  const geom = attackerGeometry({
+    mode: S.attackerMode,
+    worldPos: S.attackerWorld,
+    egoOffset: [Math.cos(centerAz) * S.standoff, Math.sin(centerAz) * S.standoff, 0],
+    pose: S.loaded.header.pose || null,
+    sensor: sn,
+    spoofer: sp,
+    sectorCenterAz: centerAz,
+    sectorWidthRad,
+  });
+  S.attackerGeom = geom;
+  const laserPos = [geom.egoPos[0], geom.egoPos[1]];
   S.last = {
     sensor: sn, spoofer: sp, reach, keepMask, spoof, result,
     phantomBox, atlasSector, secMask, centerAz, laserPos,
@@ -562,11 +586,19 @@ function updateLaserInfo() {
   const firing = S.spinning
     ? beamInSector(S.sweepAz, sec.azCenter, widthRad)
     : true;
+  const g = S.attackerGeom;
+  const cov = g ? g.coverage : null;
+  const covPct = cov ? (cov.fraction * 100).toFixed(0) : "—";
+  const covClass = !cov ? "" : cov.withinEnvelope ? "" : cov.partial ? "warn" : "err";
   el.innerHTML =
-    `${firing ? "<b>FIRING</b>" : "idle"} · aims ${((sec.azCenter * 180) / Math.PI).toFixed(0)}° ` +
-    `at ${S.standoff} m<br>beam crosses its ${sec.azWidthDeg.toFixed(1)}° window in ` +
-    `${(dwell * 1000).toFixed(2)} ms<br>${pulses.toLocaleString()} pulses @ ${(prf / 1000).toFixed(0)} kHz ` +
-    `vs ${cells.toLocaleString()} victim cells`;
+    `${firing ? "<b>FIRING</b>" : "idle"} · ${S.attackerMode === "static" ? "roadside" : "vehicle-mounted"}` +
+    ` at ${g ? g.standoff.toFixed(1) : "?"} m, bearing ${g ? g.bearingDeg.toFixed(0) : "?"}°<br>` +
+    `reach ±${g ? g.envelopeHalfWidthDeg.toFixed(1) : "?"}° · attack ${sec.azWidthDeg.toFixed(1)}° ` +
+    `at ${cov ? cov.offsetDeg.toFixed(0) : "?"}° off-axis → ` +
+    `<span style="color:var(--${covClass === "err" ? "err" : covClass === "warn" ? "warn" : "ok"})">` +
+    `${covPct}% reachable</span><br>` +
+    `beam crosses it in ${(dwell * 1000).toFixed(2)} ms · ${pulses.toLocaleString()} pulses @ ` +
+    `${(prf / 1000).toFixed(0)} kHz vs ${cells.toLocaleString()} cells`;
 }
 
 /** Where we are in the sequence, and what the schedule says about it. */
@@ -884,7 +916,12 @@ export async function boot() {
   };
   $("tracePrev").onclick = () => stepTrace(-1);
   $("traceNext").onclick = () => stepTrace(1);
-  bind("standoff", (v) => { S.standoff = v; });
+  bind("standoff", (v) => { S.standoff = v; S.attackerWorld = null; });
+  seg(["atkStatic", "atkDynamic"], (i) => {
+    S.attackerMode = ATTACKER_MODES[i === 0 ? 0 : 1];
+    S.attackerWorld = null; // re-anchor from the current aim
+    recompute();
+  });
   $("autoTarget").onclick = async () => {
     autoTarget(true);
     await prepareSequenceAttack();
@@ -898,6 +935,15 @@ export async function boot() {
     const sx = ((ev.clientX - r.left) * cv.width) / r.width;
     const sy = ((ev.clientY - r.top) * cv.height) / r.height;
     const [wx, wy] = makeView(cv, S.viewRange).inv(sx, sy);
+
+    // Shift-click plants the attacker. A roadside one keeps that WORLD position,
+    // so it stays put while the ego drives on.
+    if (ev.shiftKey) {
+      S.attackerWorld = worldFromEgoPoint([wx, wy, 0], S.loaded.header.pose || null);
+      recompute();
+      return;
+    }
+
     const boxes = (S.loaded.header.boxes || []).map(normalizeBox);
     if (S.attack === "inject") {
       // place the phantom where you clicked
@@ -1006,6 +1052,11 @@ export async function boot() {
   // Deterministic sweep position, for screenshots and headless verification:
   // ?sweptTo=90 marks the first 90 degrees as observed and stops there.
   if (q.has("sweptTo")) S.pendingSweptTo = (parseFloat(q.get("sweptTo")) * Math.PI) / 180;
+  if (q.get("attacker") === "dynamic") {
+    S.attackerMode = "dynamic";
+    $("atkStatic").setAttribute("aria-pressed", "false");
+    $("atkDynamic").setAttribute("aria-pressed", "true");
+  }
   if (q.has("speed")) {
     S.speed = Math.max(0.001, parseFloat(q.get("speed")));
     $("speed").value = String(Math.log10(S.speed));

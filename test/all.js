@@ -24,5 +24,6 @@ import "./sweep.test.js";
 import "./atlas-inject.test.js";
 import "./pose.test.js";
 import "./schedule.test.js";
+import "./attacker.test.js";
 
 await runAndReport();
