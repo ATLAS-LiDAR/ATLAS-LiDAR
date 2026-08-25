@@ -29,6 +29,33 @@ export function sweptPointCount(frame, azIdx) {
   return frame.offsets[azIdx * frame.sensor.nBeams];
 }
 
+/**
+ * Split a persistent display into its two layers.
+ *
+ * A real PPI display does not blank at the end of a revolution: each azimuth
+ * column keeps showing whatever the beam last saw there. So at any sweep
+ * position the screen is the CURRENT frame for the columns already passed, plus
+ * the PREVIOUS frame for the columns not yet reached - and in a sequence that
+ * means the cloud on screen is genuinely a mosaic of two keyframes, which is what
+ * a spinning sensor actually produces.
+ *
+ * With a single static frame the two layers reassemble exactly one copy of the
+ * cloud, so nothing blinks out at the wrap.
+ *
+ * Both boundaries are computed from the AZIMUTH, not from one shared index: the
+ * two keyframes have different point counts, and using one index for both would
+ * tear the display.
+ *
+ * @returns {{currentEnd: number, prevStart: number}}
+ *   draw frame.order[0 .. currentEnd) and prevFrame.order[prevStart .. count)
+ */
+export function sweepPartition(frame, prevFrame, azIdx) {
+  return {
+    currentEnd: sweptPointCount(frame, azIdx),
+    prevStart: sweptPointCount(prevFrame, azIdx),
+  };
+}
+
 /** Sensor column index for a sweep azimuth. */
 export function sweepAzToCell(azRad, sensor) {
   return azimuthCellIndex(azRad, sensor.azRes);

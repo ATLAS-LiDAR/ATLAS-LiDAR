@@ -12,6 +12,11 @@
  *  3. The sweep reveals points in true azimuth order by walking a prefix of
  *     `frame.order`, which is already azimuth-sorted. The animation therefore
  *     shows the order the sensor really acquired the cloud, not a decoration.
+ *  4. The display PERSISTS: it does not blank at the end of a revolution. Each
+ *     azimuth column keeps whatever the beam last saw there, so the screen is the
+ *     current frame ahead of the beam and the previous frame behind it. On a
+ *     static frame the two layers reassemble one cloud; in a sequence they are two
+ *     keyframes, which is the mosaic a spinning sensor really produces.
  *
  * ATLAS's removal sector is drawn as what it is - a hard rectangle in azimuth,
  * uniform inside - and is visually distinct from the v1 physics envelope, which
@@ -123,6 +128,7 @@ export function renderBEV(canvas, {
   pointSize = 0,
   sweep = null,
   sectorActive = false,
+  prevLayer = null,
 }) {
   const ctx = canvas.getContext("2d");
   const v = makeView(canvas, rangeM);
@@ -132,42 +138,77 @@ export function renderBEV(canvas, {
   const img = imageData.data;
   new Uint32Array(imageData.data.buffer).fill(packBg(PALETTE.bg));
 
-  // --- real returns, in azimuth order when sweeping ---
-  const n = frame.count;
-  const limit = sweep ? Math.min(sweep.cutoff, n) : n;
-  for (let k = 0; k < limit; k++) {
-    const i = sweep ? frame.order[k] : k;
-    const destroyed = keepMask !== null && keepMask[i] === 0;
-    if (destroyed && !showRemoved) continue;
-    const [sx, sy] = v.px(frame.x[i], frame.y[i]);
-    if (sx < 0 || sx >= W || sy < 0 || sy >= H) continue;
-    splat(
-      img, W, H, sx, sy,
-      destroyed ? PALETTE.removed : PALETTE.honest,
-      destroyed ? 0.95 : 0.55,
-      destroyed ? 1 : pointSize
-    );
+  // --- real returns ---
+  // Persistent display: the columns behind the beam come from the previous layer,
+  // the columns it has already passed this revolution from the current frame.
+  const drawReturns = (f, mask, from, to) => {
+    for (let k = from; k < to; k++) {
+      const i = f.order[k];
+      const destroyed = mask !== null && mask[i] === 0;
+      if (destroyed && !showRemoved) continue;
+      const [sx, sy] = v.px(f.x[i], f.y[i]);
+      if (sx < 0 || sx >= W || sy < 0 || sy >= H) continue;
+      splat(
+        img, W, H, sx, sy,
+        destroyed ? PALETTE.removed : PALETTE.honest,
+        destroyed ? 0.95 : 0.55,
+        destroyed ? 1 : pointSize
+      );
+    }
+  };
+
+  if (!sweep) {
+    drawReturns(frame, keepMask, 0, frame.count);
+  } else {
+    if (prevLayer && prevLayer.frame) {
+      drawReturns(prevLayer.frame, prevLayer.keepMask ?? null, prevLayer.prevStart, prevLayer.frame.count);
+    }
+    drawReturns(frame, keepMask, 0, Math.min(sweep.cutoff, frame.count));
   }
 
-  const revealed = (az) => !sweep || az <= sweep.az;
+  // Added points (phantom / range-replaced) follow the same rule: ahead of the
+  // beam they belong to the previous layer, behind it to the current frame.
+  const splatSet = (set, colour) => {
+    if (!set) return;
+    for (let i = 0; i < set.x.length; i++) {
+      const [sx, sy] = v.px(set.x[i], set.y[i]);
+      if (sx < 0 || sx >= W || sy < 0 || sy >= H) continue;
+      splat(img, W, H, sx, sy, colour, 1, 1);
+    }
+  };
+  const azOf = (set, i) => {
+    const a = set.az ? set.az[i] : Math.atan2(set.y[i], set.x[i]);
+    return a < 0 ? a + 2 * Math.PI : a;
+  };
+  const splitSet = (set, colour) => {
+    if (!set) return;
+    for (let i = 0; i < set.x.length; i++) {
+      if (azOf(set, i) > sweep.az) continue; // not yet re-scanned this revolution
+      const [sx, sy] = v.px(set.x[i], set.y[i]);
+      if (sx < 0 || sx >= W || sy < 0 || sy >= H) continue;
+      splat(img, W, H, sx, sy, colour, 1, 1);
+    }
+  };
+  const splitSetAhead = (set, colour) => {
+    if (!set) return;
+    for (let i = 0; i < set.x.length; i++) {
+      if (azOf(set, i) <= sweep.az) continue; // already refreshed by the current frame
+      const [sx, sy] = v.px(set.x[i], set.y[i]);
+      if (sx < 0 || sx >= W || sy < 0 || sy >= H) continue;
+      splat(img, W, H, sx, sy, colour, 1, 1);
+    }
+  };
 
-  if (replacement) {
-    for (let i = 0; i < replacement.x.length; i++) {
-      const az = Math.atan2(replacement.y[i], replacement.x[i]);
-      if (!revealed(az < 0 ? az + 2 * Math.PI : az)) continue;
-      const [sx, sy] = v.px(replacement.x[i], replacement.y[i]);
-      if (sx < 0 || sx >= W || sy < 0 || sy >= H) continue;
-      splat(img, W, H, sx, sy, PALETTE.replaced, 1, 1);
+  if (!sweep) {
+    splatSet(replacement, PALETTE.replaced);
+    splatSet(spoof, PALETTE.injected);
+  } else {
+    if (prevLayer) {
+      splitSetAhead(prevLayer.replacement, PALETTE.replaced);
+      splitSetAhead(prevLayer.spoof, PALETTE.injected);
     }
-  }
-  if (spoof) {
-    for (let i = 0; i < spoof.x.length; i++) {
-      const az = spoof.az ? spoof.az[i] : Math.atan2(spoof.y[i], spoof.x[i]);
-      if (!revealed(az < 0 ? az + 2 * Math.PI : az)) continue;
-      const [sx, sy] = v.px(spoof.x[i], spoof.y[i]);
-      if (sx < 0 || sx >= W || sy < 0 || sy >= H) continue;
-      splat(img, W, H, sx, sy, PALETTE.injected, 1, 1);
-    }
+    splitSet(replacement, PALETTE.replaced);
+    splitSet(spoof, PALETTE.injected);
   }
   ctx.putImageData(imageData, 0, 0);
 

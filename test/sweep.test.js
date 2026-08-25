@@ -4,6 +4,7 @@ import { configureSensor } from "../src/core/sensor.js";
 import { PointFrame } from "../src/core/frame.js";
 import { frameOf, atCell, emptyFrame } from "./fixtures.js";
 import {
+  sweepPartition,
   sectorDwellTime,
   pulsesDuringDwell,
   victimCellsInSector,
@@ -201,5 +202,58 @@ describe("attacker firing vs the victim's scan", () => {
     const narrowEl = victimCellsInSector(sensor, (20 * Math.PI) / 180, (2 * Math.PI) / 180);
     const wideEl = victimCellsInSector(sensor, (20 * Math.PI) / 180, (30 * Math.PI) / 180);
     expect(wideEl).toBeGreaterThan(narrowEl);
+  });
+});
+
+describe("sweepPartition — persistent display, no reset each revolution", () => {
+  it("partitions a static cloud exactly: every point drawn once, none twice", () => {
+    // The display shows the current frame for columns the beam has passed and the
+    // previous frame for the rest. With one static frame those two pieces must
+    // reassemble the whole cloud, so nothing blinks out at the wrap.
+    const frame = randomFrame(8000, 4);
+    for (const azIdx of [0, 1, 300, 1042, 2083, sensor.azCellCount]) {
+      const { currentEnd, prevStart } = sweepPartition(frame, frame, azIdx);
+      const seen = new Uint8Array(frame.count);
+      for (let i = 0; i < currentEnd; i++) seen[frame.order[i]]++;
+      for (let i = prevStart; i < frame.count; i++) seen[frame.order[i]]++;
+      for (let i = 0; i < frame.count; i++) expect(seen[i]).toBe(1);
+    }
+  });
+
+  it("shows the whole cloud at every sweep position", () => {
+    const frame = randomFrame(5000, 6);
+    for (let azIdx = 0; azIdx <= sensor.azCellCount; azIdx += 97) {
+      const { currentEnd, prevStart } = sweepPartition(frame, frame, azIdx);
+      expect(currentEnd + (frame.count - prevStart)).toBe(frame.count);
+    }
+  });
+
+  it("hands everything to the previous frame at the start of a revolution", () => {
+    const frame = randomFrame(3000, 8);
+    const p = sweepPartition(frame, frame, 0);
+    expect(p.currentEnd).toBe(0);
+    expect(p.prevStart).toBe(0); // the whole cloud comes from the previous layer
+  });
+
+  it("hands everything to the current frame at the end of a revolution", () => {
+    const frame = randomFrame(3000, 8);
+    const p = sweepPartition(frame, frame, sensor.azCellCount);
+    expect(p.currentEnd).toBe(frame.count);
+    expect(p.prevStart).toBe(frame.count); // nothing left from the previous layer
+  });
+
+  it("splits two different frames at the same azimuth, not the same index", () => {
+    // In a sequence the two layers are different keyframes with different point
+    // counts, so the split has to be computed per frame from the azimuth - using
+    // one index for both would tear the display.
+    const a = randomFrame(9000, 1);
+    const b = randomFrame(4000, 2);
+    const azIdx = 900;
+    const p = sweepPartition(a, b, azIdx);
+    expect(p.currentEnd).toBe(sweptPointCount(a, azIdx));
+    expect(p.prevStart).toBe(sweptPointCount(b, azIdx));
+    // and each layer's boundary really is at that azimuth
+    if (p.currentEnd < a.count) expect(a.azIdx[a.order[p.currentEnd]]).toBeGreaterThanOrEqual(azIdx);
+    if (p.prevStart < b.count) expect(b.azIdx[b.order[p.prevStart]]).toBeGreaterThanOrEqual(azIdx);
   });
 });

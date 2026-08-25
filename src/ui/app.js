@@ -28,7 +28,7 @@ import { loadAtlasFrame, loadManifest, parseAtlasFrame, parseRawLidar, toPointFr
 import { composeCloud } from "../core/compose.js";
 import { buildAttackBundle, downloadBundle, bundleFilename } from "../io/export.js";
 import { pickBoxAt, normalizeBox } from "../core/iou.js";
-import { sweptPointCount, advanceSweep, sweepAzToCell, beamInSector,
+import { sweptPointCount, sweepPartition, advanceSweep, sweepAzToCell, beamInSector,
          sectorDwellTime, pulsesDuringDwell, victimCellsInSector } from "../core/sweep.js";
 import { renderBEV, renderRangeImage, makeView } from "./render.js";
 
@@ -73,6 +73,7 @@ const S = {
   schedule: null,
   globalPhantom: null,     // {points, box} in world coords, placed once
   track: null,             // per-keyframe {targetBox, incomingState}
+  prev: null,              // the previous keyframe's layer, for a persistent display
   azWidthDeg: AHFR_DEFAULTS.azWidthDeg,
   pRemove: AHFR_DEFAULTS.pRemove,
   forceActive: false,
@@ -139,6 +140,7 @@ async function selectScene(slug) {
   setStatus("Loading " + entry.label + "…");
   S.isSequence = false;
   S.seq = null;
+  S.prev = null;
   S.schedule = null;
   S.globalPhantom = null;
   S.track = null;
@@ -162,6 +164,7 @@ async function selectSequence(entry) {
   setStatus("Loading " + entry.label + "…");
   S.seq = await loadSequence("assets/sequences/" + entry.file);
   S.isSequence = true;
+  S.prev = null;
   S.sceneSlug = entry.slug;
   S.frameIndex = 0;
   $("seqOpts").style.display = "";
@@ -316,6 +319,10 @@ async function recompute() {
   let result = null;
   let keepMask = null;
   let spoof = null;
+  // ATLAS's A-HFR removal deletes returns rather than moving them, so this stays
+  // null there; the Cao-mechanism model in remove.js is what produces
+  // range-replaced points when the physics overlay drives removal.
+  let replacement = null;
   let phantomBox = null;
   let atlasSector = null;
   let secMask = null;
@@ -423,6 +430,7 @@ async function recompute() {
   S.last = {
     sensor: sn, spoofer: sp, reach, keepMask, spoof, result,
     phantomBox, atlasSector, secMask, centerAz, laserPos,
+    frame, replacement,
     ms: performance.now() - t0,
   };
   draw();
@@ -433,15 +441,21 @@ async function recompute() {
 
 function draw() {
   if (!S.last || !S.frame) return;
-  const { sensor: sn, reach, keepMask, spoof, phantomBox, atlasSector, secMask, centerAz } = S.last;
+  const { sensor: sn, reach, keepMask, spoof, replacement, phantomBox, atlasSector, secMask, centerAz } = S.last;
   const frame = S.frame;
 
+  // Persistent display: ahead of the beam, keep showing the previous layer. On a
+  // static frame the previous layer IS this frame, so the two pieces reassemble
+  // one cloud and nothing blanks at the wrap.
+  const base = S.prev && S.prev.frame ? S.prev : { frame, keepMask, spoof, replacement };
+  const azIdx = sweepAzToCell(S.sweepAz, sn);
+  const part = sweepPartition(frame, base.frame, azIdx);
+
   const sweep = S.spinning
-    ? {
-        az: S.sweepAz,
-        azIdx: sweepAzToCell(S.sweepAz, sn),
-        cutoff: sweptPointCount(frame, sweepAzToCell(S.sweepAz, sn)),
-      }
+    ? { az: S.sweepAz, azIdx, cutoff: part.currentEnd }
+    : null;
+  const prevLayer = S.spinning
+    ? { ...base, prevStart: part.prevStart }
     : null;
 
   const sectorActive = atlasSector
@@ -459,17 +473,24 @@ function draw() {
     : null;
 
   const common = { frame, boxes, reach, spooferPos: S.overlay ? S.spooferPos : null, rangeM: S.viewRange, sweep };
-  renderBEV($("cvClean"), { ...common, keepMask: null, spoof: null, showRemoved: false, targetBox: targetView });
+  renderBEV($("cvClean"), {
+    ...common,
+    keepMask: null, spoof: null, showRemoved: false, targetBox: targetView,
+    // the clean view persists the previous frame's honest returns only
+    prevLayer: prevLayer ? { frame: prevLayer.frame, keepMask: null, prevStart: prevLayer.prevStart } : null,
+  });
   renderBEV($("cvPert"), {
     ...common,
     keepMask,
     spoof,
+    replacement,
     atlasSector,
     sectorActive,
     laser,
     targetBox: targetView,
     phantomBox,
     showRemoved: S.showRemoved,
+    prevLayer,
   });
   updateLaserInfo();
   updateSeqInfo();
@@ -631,6 +652,15 @@ function loop(t) {
 
 async function advanceKeyframe(delta) {
   if (!S.isSequence) return;
+  // hand the frame we were showing to the persistent layer before replacing it
+  if (S.last && S.last.frame) {
+    S.prev = {
+      frame: S.last.frame,
+      keepMask: S.last.keepMask,
+      spoof: S.last.spoof,
+      replacement: S.last.replacement,
+    };
+  }
   const next = (S.frameIndex + delta + S.seq.header.nFrames) % S.seq.header.nFrames;
   await loadKeyframe(next);
   $("frameIdx").value = String(next);
@@ -800,6 +830,7 @@ export async function boot() {
     recompute();
   };
   $("frameIdx").oninput = async (e) => {
+    S.prev = null; // a manual jump is not a continuous scan
     await loadKeyframe(parseInt(e.target.value, 10));
     labels();
     await recompute();
