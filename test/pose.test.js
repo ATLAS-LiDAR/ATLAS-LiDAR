@@ -10,6 +10,7 @@ import {
   relativePose,
 } from "../src/core/pose.js";
 import { loadSequence, loadSequenceManifest, frameOfSequence } from "../src/io/sequence.js";
+import { SCHEDULE_DEFAULTS } from "../src/core/schedule.js";
 
 /** Rigid transform: rotation about z by `yaw` then translation. */
 function rigid(yaw, tx, ty, tz) {
@@ -85,20 +86,52 @@ describe("sequence loading", () => {
 
   it("loads a real sequence with per-frame poses and boxes", async () => {
     const seq = await loadSequence("../assets/sequences/nuscenes-scene0.atlasseq");
-    expect(seq.header.nFrames).toBe(20);
     expect(seq.header.sensor).toBe("hdl32e");
     // nuScenes keyframes are 2 Hz; match_with_velocity needs this, not 0.1
     expect(seq.header.dtSec).toBeCloseTo(0.5, 0.05);
-    expect(seq.header.frames).toHaveLength(20);
+    expect(seq.header.frames).toHaveLength(seq.header.nFrames);
     for (const f of seq.header.frames) {
       expect(f.pose).toHaveLength(16);
       expect(f.nPoints).toBeGreaterThan(1000);
     }
   });
 
+  it("is long enough that an intermittent attack always has room for a gap", async () => {
+    // Assert the REQUIREMENT, not the exported number: an intermittent schedule
+    // needs more available frames than the longest attack it can draw, or it
+    // collapses to degenerate. avail = nFrames - cleanPrefix must exceed maxLen.
+    // A full nuScenes scene is 20 s at 2 Hz = 40 keyframes, which satisfies it;
+    // the half-length export this replaced did not.
+    const need = SCHEDULE_DEFAULTS.maxLen + SCHEDULE_DEFAULTS.cleanPrefix;
+    const m = await loadSequenceManifest("../assets/sequences/manifest.json");
+    for (const e of m) {
+      expect(e.nFrames).toBeGreaterThan(need);
+    }
+  });
+
+  it("has finite velocities on every box, as pcdet guarantees", async () => {
+    // nuScenes gives NaN velocity to an object with no match in the adjacent
+    // keyframe. pcdet zeroes those (SET_NAN_VELOCITY_TO_ZEROS), and so must the
+    // exporter: a NaN would poison match_with_velocity's prediction, and it also
+    // makes the JSON header unparseable, since json.dumps writes a bare NaN.
+    const seq = await loadSequence("../assets/sequences/nuscenes-scene0.atlasseq");
+    let boxes = 0;
+    for (const f of seq.header.frames) {
+      for (const b of f.boxes) {
+        boxes++;
+        expect(Number.isFinite(b.velocity[0])).toBeTruthy();
+        expect(Number.isFinite(b.velocity[1])).toBeTruthy();
+        for (const v of [...b.center, ...b.size, b.yaw]) {
+          expect(Number.isFinite(v)).toBeTruthy();
+        }
+      }
+    }
+    expect(boxes).toBeGreaterThan(100);
+  });
+
   it("slices out an individual frame's cloud", async () => {
     const seq = await loadSequence("../assets/sequences/nuscenes-scene0.atlasseq");
-    for (const k of [0, 9, 19]) {
+    for (const k of [0, 9, 19, seq.header.nFrames - 1]) {
       const f = frameOfSequence(seq, k);
       expect(f.x).toHaveLength(seq.header.counts[k]);
       expect(f.intensity.length).toBe(f.x.length);

@@ -87,6 +87,17 @@ a moving vehicle, and the readout says when the track is **LOST**.
 continuous burst, or intermittent - one attack per sequence, flickering on and off
 with the attacked-frame count held equal to the continuous case.
 
+**Sequences are exported at full scene length** (40 and 41 keyframes, ~20 s each),
+and that is a correctness requirement rather than a nicety. Intermittent mode needs
+`nFrames - cleanPrefix` to exceed the longest attack it can draw, or `L` fills the
+whole available span, no gap fits, and the schedule is flagged `degenerate`. ATLAS's
+`maxLen = 32` was chosen against full nuScenes scenes: 40 keyframes minus a 4-frame
+clean prefix leaves 36 > 32, so it can never degenerate. An earlier half-length
+20-keyframe export left only 16 available, and any `requestedL >= 16` collapsed -
+over half of all seeds. `test/pose.test.js` asserts the requirement against the
+manifest rather than pinning the frame count. The cost is asset size: ~10 MB per
+sequence, 20 MB total.
+
 One display simplification, stated because it is not physical: **one displayed
 revolution advances one keyframe.** nuScenes keyframes are 2 Hz samples of a 20 Hz
 spin, so the real gap between them is ten revolutions. Compressing it keeps the
@@ -205,6 +216,13 @@ documented in the ports:
 - `center_trace` transforms **xy only**; z keeps the height at which the object
   was originally observed and is corrected later by ground anchoring. Recentring z
   would double-correct and sink the phantom.
+- nuScenes velocity is a finite difference against the neighbouring keyframe, so an
+  object with no match there gets **NaN**. pcdet zeroes it before ATLAS sees a box
+  (`gt_boxes[np.isnan(gt_boxes)] = 0` under `SET_NAN_VELOCITY_TO_ZEROS`, which every
+  nuScenes config in the pipeline enables), so the exporter does the same. Left
+  alone it would poison `match_with_velocity`'s prediction - and, because
+  `json.dumps` writes a bare `NaN`, silently produce a header no browser can parse.
+  The exporters now pass `allow_nan=False` so that fails loudly instead.
 - `match_with_velocity` defaults to `dt=0.1` for Waymo, but nuScenes keyframes are
   2 Hz. Its own docstring warns that using 0.1 there makes the constant-velocity
   prediction 5x too short, so a fast vehicle exceeds `max_step` and the track is

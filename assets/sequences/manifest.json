@@ -2,21 +2,21 @@
   {
     "file": "nuscenes-scene0.atlasseq",
     "slug": "nuscenes-scene0",
-    "label": "nuScenes driving sequence 0 (20 keyframes)",
+    "label": "nuScenes driving sequence 0 (40 keyframes)",
     "dataset": "nuscenes",
     "sensor": "hdl32e",
-    "nFrames": 20,
-    "dtSec": 0.4998757839202881,
-    "nPoints": 694432
+    "nFrames": 40,
+    "dtSec": 0.4998760223388672,
+    "nPoints": 1388928
   },
   {
     "file": "nuscenes-scene1.atlasseq",
     "slug": "nuscenes-scene1",
-    "label": "nuScenes driving sequence 1 (20 keyframes)",
+    "label": "nuScenes driving sequence 1 (41 keyframes)",
     "dataset": "nuscenes",
     "sensor": "hdl32e",
-    "nFrames": 20,
-    "dtSec": 0.4998891353607178,
-    "nPoints": 694272
+    "nFrames": 41,
+    "dtSec": 0.49988603591918945,
+    "nPoints": 1423552
   }
 ]

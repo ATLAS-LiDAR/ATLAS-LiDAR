@@ -84,6 +84,33 @@ describe("buildAttackSchedule — port of ATLAS build_single_attack_schedule", (
     }
   });
 
+  // WHY THE SEQUENCE ASSETS ARE FULL-LENGTH
+  // ATLAS's maxLen of 32 was chosen against full nuScenes scenes, which are 20 s
+  // at 2 Hz = 40 keyframes. With cleanPrefix 4 that leaves avail = 36 > 32, so L
+  // can never reach the available span and intermittent mode always has room for
+  // a gap. Truncating the export to 20 keyframes leaves avail = 16, and any
+  // requestedL >= 16 collapses to degenerate - over half of all seeds. The fix is
+  // the asset length, not the algorithm, so this pins both directions.
+  it("never degenerates at full nuScenes scene length", () => {
+    for (let seed = 1; seed <= 200; seed++) {
+      const s = buildAttackSchedule({ nFrames: 40, seed, mode: "intermittent", label: "s" });
+      expect(s.meta.degenerate).toBeFalsy();
+      expect(s.meta.nGaps).toBeGreaterThan(0);
+      expect(s.meta.spanLen).toBeGreaterThan(s.meta.attackLenL);
+    }
+  });
+
+  it("degenerates for most seeds at HALF a scene, which is why the export is not truncated", () => {
+    let bad = 0;
+    for (let seed = 1; seed <= 200; seed++) {
+      if (buildAttackSchedule({ nFrames: 20, seed, mode: "intermittent", label: "s" }).meta.degenerate) {
+        bad++;
+      }
+    }
+    // requestedL ~ uniform{2..32}; P(requestedL >= 16) = 17/31 ~ 0.55
+    expect(bad).toBeGreaterThan(80);
+  });
+
   it("clamps the attack length to the frames actually available", () => {
     const s = sched({ nFrames: 8, mode: "continuous", minLen: 30, maxLen: 32 });
     // 8 frames minus a 4-frame clean prefix leaves 4

@@ -132,17 +132,17 @@ def export(dataset, difficulty, per_library, out_dir):
         "payloadOffset": 0,
     }
 
-    hjson = json.dumps(header, separators=(",", ":")).encode("utf-8")
+    hjson = json.dumps(header, separators=(",", ":"), allow_nan=False).encode("utf-8")
     pad = (-(12 + len(hjson))) % 8
     header["payloadOffset"] = 12 + len(hjson) + pad
-    hjson = json.dumps(header, separators=(",", ":")).encode("utf-8")
+    hjson = json.dumps(header, separators=(",", ":"), allow_nan=False).encode("utf-8")
     pad = (-(12 + len(hjson))) % 8
     if header["payloadOffset"] != 12 + len(hjson) + pad:
         header["payloadOffset"] = 12 + len(hjson) + pad
-        hjson = json.dumps(header, separators=(",", ":")).encode("utf-8")
+        hjson = json.dumps(header, separators=(",", ":"), allow_nan=False).encode("utf-8")
         hjson += b" " * ((-(12 + len(hjson))) % 8)
         header["payloadOffset"] = 12 + len(hjson)
-        hjson = json.dumps(header, separators=(",", ":")).encode("utf-8").ljust(len(hjson), b" ")
+        hjson = json.dumps(header, separators=(",", ":"), allow_nan=False).encode("utf-8").ljust(len(hjson), b" ")
     pad = header["payloadOffset"] - 12 - len(hjson)
 
     os.makedirs(out_dir, exist_ok=True)

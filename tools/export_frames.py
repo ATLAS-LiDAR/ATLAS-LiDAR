@@ -167,7 +167,7 @@ def write_atlasframe(out_path, pts, boxes, labels, meta, name):
         ],
         **meta,
     }
-    hjson = json.dumps(header, separators=(",", ":")).encode("utf-8")
+    hjson = json.dumps(header, separators=(",", ":"), allow_nan=False).encode("utf-8")
     # The payload starts at 12 + len(header), and int16 views need an even byte
     # offset (JS throws otherwise). Pad the header with spaces - which JSON
     # ignores - so the payload always begins 8-byte aligned regardless of how

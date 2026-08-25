@@ -80,6 +80,15 @@ def read_sweep(root, info):
 def boxes_of(info):
     out = []
     gt = np.asarray(info.get("gt_boxes", np.zeros((0, 9))), dtype=np.float64)
+    # nuScenes velocity is a finite difference against the adjacent keyframe, so an
+    # object appearing or disappearing at a scene boundary gets NaN. pcdet zeroes
+    # those before ATLAS ever sees a box - nuscenes_dataset.py does
+    # `gt_boxes[np.isnan(gt_boxes)] = 0` under SET_NAN_VELOCITY_TO_ZEROS, which
+    # every nuScenes config in the pipeline sets True - so do exactly that here.
+    # Matching the pipeline matters: a NaN velocity would poison
+    # match_with_velocity's constant-velocity prediction and drop the track.
+    gt = gt.copy()
+    gt[np.isnan(gt)] = 0.0
     names = info.get("gt_names", [])
     for b, nm in zip(gt, names):
         out.append({
@@ -186,18 +195,18 @@ def main():
         "payloadOffset": 0,
     }
 
-    hjson = json.dumps(header, separators=(",", ":")).encode("utf-8")
+    hjson = json.dumps(header, separators=(",", ":"), allow_nan=False).encode("utf-8")
     pad = (-(12 + len(hjson))) % 8
     header["payloadOffset"] = 12 + len(hjson) + pad
-    hjson = json.dumps(header, separators=(",", ":")).encode("utf-8")
+    hjson = json.dumps(header, separators=(",", ":"), allow_nan=False).encode("utf-8")
     pad = (-(12 + len(hjson))) % 8
     if header["payloadOffset"] != 12 + len(hjson) + pad:
         header["payloadOffset"] = 12 + len(hjson) + pad
-        hjson = json.dumps(header, separators=(",", ":")).encode("utf-8")
+        hjson = json.dumps(header, separators=(",", ":"), allow_nan=False).encode("utf-8")
         extra = header["payloadOffset"] - 12 - len(hjson)
         if extra < 0:
             header["payloadOffset"] = 12 + len(hjson) + ((-(12 + len(hjson))) % 8)
-            hjson = json.dumps(header, separators=(",", ":")).encode("utf-8")
+            hjson = json.dumps(header, separators=(",", ":"), allow_nan=False).encode("utf-8")
         pad = header["payloadOffset"] - 12 - len(hjson)
     pad = max(0, header["payloadOffset"] - 12 - len(hjson))
 

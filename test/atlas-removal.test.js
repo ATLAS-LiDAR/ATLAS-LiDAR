@@ -1,8 +1,11 @@
 import { describe, it, expect } from "./harness.js";
 import { configureSensor } from "../src/core/sensor.js";
 import { frameOf, atDir } from "./fixtures.js";
+import { loadSequence } from "../src/io/sequence.js";
+import { buildAttackSchedule } from "../src/core/schedule.js";
 import {
   wrapToPi,
+  NUSCENES_TRACK,
   ahfrGateProb,
   boxCenterToAzEl,
   boxCenterRange,
@@ -454,6 +457,60 @@ describe("ahfrAim", () => {
       expect(aim.elCenter).toBeCloseTo(full.meta.elCenterRad, 1e-12);
       expect(aim.scanGateProb).toBeCloseTo(full.meta.scanGateProb, 1e-12);
     }
+  });
+
+  // END-TO-END OVER A REAL SEQUENCE
+  // Every other tracker test uses a synthetic box path. This one runs ATLAS's
+  // actual loop - selectInitialTarget on frame 0, then match_with_velocity frame
+  // to frame, with aim state threaded through - over a real 40-keyframe nuScenes
+  // scene. It only became worth writing once the exported sequences were full
+  // length: on a 20-frame export the track had barely enough frames to be tested
+  // against, and every intermittent schedule collapsed to degenerate.
+  it("tracks a real target across a full nuScenes sequence", async () => {
+    const seq = await loadSequence("../assets/sequences/nuscenes-scene0.atlasseq");
+    const dt = seq.header.dtSec;
+    const frames = seq.header.frames;
+
+    const asAtlas = (boxes) =>
+      boxes.map((b) => [...b.center, ...b.size, b.yaw, ...b.velocity,
+                        /car|van|truck|bus|trailer|vehicle/i.test(b.label) ? 1 : 2]);
+
+    let prev = null;
+    let state = null;
+    let held = 0;
+    for (let k = 0; k < frames.length; k++) {
+      const boxes = asAtlas(frames[k].boxes);
+      const box = k === 0
+        ? selectInitialTarget(boxes, {
+            desiredRange: NUSCENES_TRACK.desiredRange, tol: AHFR_DEFAULTS.tol,
+            targetClass: 1, minRange: NUSCENES_TRACK.minRange,
+            negative: NUSCENES_TRACK.negative,
+          }).box
+        : matchWithVelocity(prev, null, boxes, { dt, maxStep: NUSCENES_TRACK.maxStep }).box;
+      if (!box) break; // ATLAS gives up for the rest of the sequence
+      const aim = ahfrAim({ targetBox: box, state, rng: makeAtlasRng(7 + k) });
+      state = aim.state;
+      prev = box;
+      held++;
+      expect(Number.isFinite(aim.azCenter)).toBeTruthy();
+    }
+    // The track must survive well past the 4-frame clean prefix, or the temporal
+    // half of the attack is untestable. It need not survive to the end: a target
+    // can genuinely leave the scene, and ATLAS then stops for good.
+    expect(held).toBeGreaterThan(10);
+  });
+
+  it("gives an intermittent schedule real gaps to track through", async () => {
+    const seq = await loadSequence("../assets/sequences/nuscenes-scene0.atlasseq");
+    const s = buildAttackSchedule({
+      nFrames: seq.header.nFrames, seed: 42, mode: "intermittent", label: seq.header.slug,
+    });
+    expect(s.meta.degenerate).toBeFalsy();
+    expect(s.meta.nGaps).toBeGreaterThan(0);
+    // a gap means at least one clean frame strictly inside the attacked span
+    const first = s.attacked[0];
+    const last = s.attacked[s.attacked.length - 1];
+    expect(s.meta.gapLocal.every((g) => g > first && g < last)).toBeTruthy();
   });
 
   it("propagates state across frames with the servo limit applied", () => {
