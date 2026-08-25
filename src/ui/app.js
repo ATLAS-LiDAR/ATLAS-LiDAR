@@ -28,7 +28,8 @@ import { loadAtlasFrame, loadManifest, parseAtlasFrame, parseRawLidar, toPointFr
 import { composeCloud } from "../core/compose.js";
 import { buildAttackBundle, downloadBundle, bundleFilename } from "../io/export.js";
 import { pickBoxAt, normalizeBox } from "../core/iou.js";
-import { sweptPointCount, sweepPartition, advanceSweep, sweepAzToCell, beamInSector,
+import { makeAccumulator, resetAccumulator, markSwept, accumulatedColumns,
+         advanceSweep, sweepAzToCell, beamInSector,
          sectorDwellTime, pulsesDuringDwell, victimCellsInSector } from "../core/sweep.js";
 import { renderBEV, renderRangeImage, makeView } from "./render.js";
 
@@ -73,7 +74,11 @@ const S = {
   schedule: null,
   globalPhantom: null,     // {points, box} in world coords, placed once
   track: null,             // per-keyframe {targetBox, incomingState}
-  prev: null,              // the previous keyframe's layer, for a persistent display
+  // Accumulation: the display starts empty and each azimuth sector is filled in
+  // as the beam passes it, keeping its last observation thereafter.
+  accum: null,
+  layers: new Map(),       // observation id -> {frame, keepMask, spoof, replacement}
+  layerId: 0,
   azWidthDeg: AHFR_DEFAULTS.azWidthDeg,
   pRemove: AHFR_DEFAULTS.pRemove,
   forceActive: false,
@@ -140,7 +145,6 @@ async function selectScene(slug) {
   setStatus("Loading " + entry.label + "…");
   S.isSequence = false;
   S.seq = null;
-  S.prev = null;
   S.schedule = null;
   S.globalPhantom = null;
   S.track = null;
@@ -157,6 +161,8 @@ async function selectScene(slug) {
   await traceLib();
   labels();
   await recompute();
+  clearAccumulation();
+  S.sweepAz = 0;
 }
 
 /** Load a driving sequence and prepare its schedule, phantom and track. */
@@ -164,7 +170,6 @@ async function selectSequence(entry) {
   setStatus("Loading " + entry.label + "…");
   S.seq = await loadSequence("assets/sequences/" + entry.file);
   S.isSequence = true;
-  S.prev = null;
   S.sceneSlug = entry.slug;
   S.frameIndex = 0;
   $("seqOpts").style.display = "";
@@ -178,6 +183,8 @@ async function selectSequence(entry) {
   await prepareSequenceAttack();
   labels();
   await recompute();
+  clearAccumulation();
+  S.sweepAz = 0;
 }
 
 async function loadKeyframe(k) {
@@ -433,8 +440,36 @@ async function recompute() {
     frame, replacement,
     ms: performance.now() - t0,
   };
+
+  // A new observation the beam can write into sectors from here on. Older ones
+  // stay alive only while some sector still shows them.
+  if (!S.accum || S.accum.azCellCount !== sn.azCellCount) S.accum = makeAccumulator(sn);
+  S.layerId += 1;
+  S.layers.set(S.layerId, { frame, keepMask, spoof, replacement });
+  pruneLayers();
   draw();
   report();
+}
+
+/** Drop observations no sector shows any more, so memory does not grow. */
+function pruneLayers() {
+  if (!S.accum) return;
+  const live = new Set([S.layerId]);
+  for (let c = 0; c < S.accum.observed.length; c++) {
+    const o = S.accum.observed[c];
+    if (o >= 0) live.add(o);
+  }
+  for (const id of [...S.layers.keys()]) if (!live.has(id)) S.layers.delete(id);
+}
+
+/** Start the display over from empty (new scene, or a manual frame jump). */
+function clearAccumulation() {
+  if (S.accum) resetAccumulator(S.accum);
+  S.layers.clear();
+  if (S.last) S.layers.set(S.layerId, {
+    frame: S.last.frame, keepMask: S.last.keepMask,
+    spoof: S.last.spoof, replacement: S.last.replacement,
+  });
 }
 
 /* -------------------------------- render --------------------------------- */
@@ -444,19 +479,11 @@ function draw() {
   const { sensor: sn, reach, keepMask, spoof, replacement, phantomBox, atlasSector, secMask, centerAz } = S.last;
   const frame = S.frame;
 
-  // Persistent display: ahead of the beam, keep showing the previous layer. On a
-  // static frame the previous layer IS this frame, so the two pieces reassemble
-  // one cloud and nothing blanks at the wrap.
-  const base = S.prev && S.prev.frame ? S.prev : { frame, keepMask, spoof, replacement };
   const azIdx = sweepAzToCell(S.sweepAz, sn);
-  const part = sweepPartition(frame, base.frame, azIdx);
-
-  const sweep = S.spinning
-    ? { az: S.sweepAz, azIdx, cutoff: part.currentEnd }
-    : null;
-  const prevLayer = S.spinning
-    ? { ...base, prevStart: part.prevStart }
-    : null;
+  const sweep = S.spinning ? { az: S.sweepAz, azIdx } : null;
+  // Spinning: draw each sector from whatever observation owns it, so the view
+  // builds up from empty and then holds. Paused: show the whole frame.
+  const accum = S.spinning ? S.accum : null;
 
   const sectorActive = atlasSector
     ? beamInSector(S.sweepAz, atlasSector.azCenter, atlasSector.azWidthDeg * DEG)
@@ -473,11 +500,13 @@ function draw() {
     : null;
 
   const common = { frame, boxes, reach, spooferPos: S.overlay ? S.spooferPos : null, rangeM: S.viewRange, sweep };
+  // the clean view accumulates the same sectors, but with no attack applied
+  const cleanLayers = new Map();
+  for (const [id, l] of S.layers) cleanLayers.set(id, { frame: l.frame });
   renderBEV($("cvClean"), {
     ...common,
     keepMask: null, spoof: null, showRemoved: false, targetBox: targetView,
-    // the clean view persists the previous frame's honest returns only
-    prevLayer: prevLayer ? { frame: prevLayer.frame, keepMask: null, prevStart: prevLayer.prevStart } : null,
+    accum, layers: cleanLayers,
   });
   renderBEV($("cvPert"), {
     ...common,
@@ -490,10 +519,19 @@ function draw() {
     targetBox: targetView,
     phantomBox,
     showRemoved: S.showRemoved,
-    prevLayer,
+    accum, layers: S.layers,
   });
   updateLaserInfo();
   updateSeqInfo();
+  const secEl = $("stSectors");
+  if (secEl && S.accum) {
+    const obs = accumulatedColumns(S.accum);
+    const tot = S.accum.observed.length;
+    secEl.innerHTML = S.spinning
+      ? `${obs.toLocaleString()}<small>/${tot.toLocaleString()}</small>`
+      : "all";
+    $("stSectorsWrap").className = "stat" + (S.spinning && obs < tot ? " warn2" : " good");
+  }
   renderRangeImage($("cvLattice"), {
     frame,
     sensor: sn,
@@ -564,7 +602,13 @@ function report() {
     return;
   }
   const { result, reach, ms } = S.last;
-  const rows = [stat("Frame points", S.frame.count.toLocaleString())];
+  const obs = S.accum ? accumulatedColumns(S.accum) : 0;
+  const total = S.accum ? S.accum.observed.length : 0;
+  const rows = [
+    stat("Frame points", S.frame.count.toLocaleString()),
+    `<div class="stat" id="stSectorsWrap"><div class="k2">Sectors observed</div>` +
+      `<div class="v" id="stSectors">${S.spinning ? obs.toLocaleString() + "<small>/" + total.toLocaleString() + "</small>" : "all"}</div></div>`,
+  ];
 
   if (S.attack === "inject") {
     const st = result.stats;
@@ -634,10 +678,12 @@ let lastT = 0;
 function loop(t) {
   const dt = lastT ? Math.min(0.05, (t - lastT) / 1000) : 0;
   lastT = t;
-  if (S.spinning && S.frame && S.last) {
+  if (S.spinning && S.frame && S.last && !S.frozen) {
     const prevAz = S.sweepAz;
     S.sweepAz = advanceSweep(S.sweepAz, dt, S.last.sensor, S.speed);
     S.laserPhase = (S.laserPhase + dt * 3) % 1;
+    // the beam observes every sector it crossed on this step
+    if (S.accum) markSwept(S.accum, prevAz, S.sweepAz, S.layerId, S.last.sensor);
     // One displayed revolution advances one keyframe. nuScenes keyframes are 2 Hz
     // samples of a 20 Hz spin, so this compresses the gap between them - it keeps
     // the two clocks legible rather than pretending to be real time.
@@ -652,15 +698,6 @@ function loop(t) {
 
 async function advanceKeyframe(delta) {
   if (!S.isSequence) return;
-  // hand the frame we were showing to the persistent layer before replacing it
-  if (S.last && S.last.frame) {
-    S.prev = {
-      frame: S.last.frame,
-      keepMask: S.last.keepMask,
-      spoof: S.last.spoof,
-      replacement: S.last.replacement,
-    };
-  }
   const next = (S.frameIndex + delta + S.seq.header.nFrames) % S.seq.header.nFrames;
   await loadKeyframe(next);
   $("frameIdx").value = String(next);
@@ -830,7 +867,6 @@ export async function boot() {
     recompute();
   };
   $("frameIdx").oninput = async (e) => {
-    S.prev = null; // a manual jump is not a continuous scan
     await loadKeyframe(parseInt(e.target.value, 10));
     labels();
     await recompute();
@@ -967,6 +1003,13 @@ export async function boot() {
     $("placeWorld").setAttribute("aria-pressed", "true");
   }
   if (q.has("frame")) S.pendingFrame = parseInt(q.get("frame"), 10);
+  // Deterministic sweep position, for screenshots and headless verification:
+  // ?sweptTo=90 marks the first 90 degrees as observed and stops there.
+  if (q.has("sweptTo")) S.pendingSweptTo = (parseFloat(q.get("sweptTo")) * Math.PI) / 180;
+  if (q.has("speed")) {
+    S.speed = Math.max(0.001, parseFloat(q.get("speed")));
+    $("speed").value = String(Math.log10(S.speed));
+  }
   if (q.get("spin") === "0") {
     S.spinning = false;
     $("fullBtn").click();
@@ -994,6 +1037,14 @@ export async function boot() {
     }
     await prepareSequenceAttack();
     await recompute();
+  }
+
+  if (S.pendingSweptTo != null && S.accum && S.last) {
+    resetAccumulator(S.accum);
+    markSwept(S.accum, 0, S.pendingSweptTo, S.layerId, S.last.sensor);
+    S.sweepAz = S.pendingSweptTo;
+    S.frozen = true; // hold this position so the view can be inspected
+    draw();
   }
 
   labels();

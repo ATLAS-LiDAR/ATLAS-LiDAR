@@ -4,7 +4,10 @@ import { configureSensor } from "../src/core/sensor.js";
 import { PointFrame } from "../src/core/frame.js";
 import { frameOf, atCell, emptyFrame } from "./fixtures.js";
 import {
-  sweepPartition,
+  makeAccumulator,
+  markSwept,
+  columnRange,
+  accumulatedColumns,
   sectorDwellTime,
   pulsesDuringDwell,
   victimCellsInSector,
@@ -205,55 +208,85 @@ describe("attacker firing vs the victim's scan", () => {
   });
 });
 
-describe("sweepPartition — persistent display, no reset each revolution", () => {
-  it("partitions a static cloud exactly: every point drawn once, none twice", () => {
-    // The display shows the current frame for columns the beam has passed and the
-    // previous frame for the rest. With one static frame those two pieces must
-    // reassemble the whole cloud, so nothing blinks out at the wrap.
-    const frame = randomFrame(8000, 4);
-    for (const azIdx of [0, 1, 300, 1042, 2083, sensor.azCellCount]) {
-      const { currentEnd, prevStart } = sweepPartition(frame, frame, azIdx);
-      const seen = new Uint8Array(frame.count);
-      for (let i = 0; i < currentEnd; i++) seen[frame.order[i]]++;
-      for (let i = prevStart; i < frame.count; i++) seen[frame.order[i]]++;
-      for (let i = 0; i < frame.count; i++) expect(seen[i]).toBe(1);
+describe("accumulation buffer — starts empty, fills as the beam passes", () => {
+  it("starts with nothing observed", () => {
+    const acc = makeAccumulator(sensor);
+    expect(acc.observed.length).toBe(sensor.azCellCount);
+    expect(accumulatedColumns(acc)).toBe(0);
+    for (let c = 0; c < sensor.azCellCount; c++) expect(acc.observed[c]).toBe(-1);
+  });
+
+  it("fills in only the sectors the beam has passed", () => {
+    const acc = makeAccumulator(sensor);
+    markSwept(acc, 0, Math.PI / 2, 1, sensor); // a quarter turn
+    const quarter = Math.round(sensor.azCellCount / 4);
+    expect(accumulatedColumns(acc)).toBeGreaterThan(quarter - 3);
+    expect(accumulatedColumns(acc)).toBeLessThan(quarter + 3);
+    // and specifically: early columns owned, later ones still empty
+    expect(acc.observed[5]).toBe(1);
+    expect(acc.observed[sensor.azCellCount - 5]).toBe(-1);
+  });
+
+  it("is full after one complete revolution and never empties again", () => {
+    const acc = makeAccumulator(sensor);
+    markSwept(acc, 0, 2 * Math.PI - 1e-9, 1, sensor);
+    expect(accumulatedColumns(acc)).toBe(sensor.azCellCount);
+    // a second pass over a quarter turn must not blank the rest
+    markSwept(acc, 0, Math.PI / 2, 2, sensor);
+    expect(accumulatedColumns(acc)).toBe(sensor.azCellCount);
+  });
+
+  it("overwrites a sector's owner when the beam re-passes it", () => {
+    const acc = makeAccumulator(sensor);
+    markSwept(acc, 0, 2 * Math.PI - 1e-9, 1, sensor);
+    expect(acc.observed[5]).toBe(1);
+    markSwept(acc, 0, Math.PI / 2, 2, sensor);
+    expect(acc.observed[5]).toBe(2);
+    // the sectors not yet re-reached still hold the OLD observation
+    expect(acc.observed[sensor.azCellCount - 5]).toBe(1);
+  });
+
+  it("handles a sweep that wraps past zero", () => {
+    const acc = makeAccumulator(sensor);
+    markSwept(acc, 2 * Math.PI - 0.05, 0.05, 1, sensor);
+    // columns at both ends of the lattice are covered, the middle is not
+    expect(acc.observed[0]).toBe(1);
+    expect(acc.observed[sensor.azCellCount - 1]).toBe(1);
+    expect(acc.observed[Math.floor(sensor.azCellCount / 2)]).toBe(-1);
+  });
+
+  it("marks nothing when the beam has not moved", () => {
+    const acc = makeAccumulator(sensor);
+    markSwept(acc, 1.0, 1.0, 1, sensor);
+    expect(accumulatedColumns(acc)).toBeLessThanOrEqual(1);
+  });
+
+  it("advances monotonically over many small steps to a full sweep", () => {
+    const acc = makeAccumulator(sensor);
+    let az = 0;
+    let prev = 0;
+    for (let i = 0; i < 400; i++) {
+      const next = az + (2 * Math.PI) / 400;
+      markSwept(acc, az, next % (2 * Math.PI), 1, sensor);
+      az = next % (2 * Math.PI);
+      const now = accumulatedColumns(acc);
+      expect(now).toBeGreaterThanOrEqual(prev);
+      prev = now;
     }
+    expect(accumulatedColumns(acc)).toBe(sensor.azCellCount);
   });
 
-  it("shows the whole cloud at every sweep position", () => {
-    const frame = randomFrame(5000, 6);
-    for (let azIdx = 0; azIdx <= sensor.azCellCount; azIdx += 97) {
-      const { currentEnd, prevStart } = sweepPartition(frame, frame, azIdx);
-      expect(currentEnd + (frame.count - prevStart)).toBe(frame.count);
+  it("gives the contiguous point range of a single azimuth column", () => {
+    // All beams of one column are adjacent in frame.order, because
+    // cellKey = azIdx * nBeams + beamIdx, so a column is one slice.
+    const frame = randomFrame(20000, 12);
+    let total = 0;
+    for (let c = 0; c < sensor.azCellCount; c++) {
+      const { start, end } = columnRange(frame, c);
+      expect(end).toBeGreaterThanOrEqual(start);
+      for (let i = start; i < end; i++) expect(frame.azIdx[frame.order[i]]).toBe(c);
+      total += end - start;
     }
-  });
-
-  it("hands everything to the previous frame at the start of a revolution", () => {
-    const frame = randomFrame(3000, 8);
-    const p = sweepPartition(frame, frame, 0);
-    expect(p.currentEnd).toBe(0);
-    expect(p.prevStart).toBe(0); // the whole cloud comes from the previous layer
-  });
-
-  it("hands everything to the current frame at the end of a revolution", () => {
-    const frame = randomFrame(3000, 8);
-    const p = sweepPartition(frame, frame, sensor.azCellCount);
-    expect(p.currentEnd).toBe(frame.count);
-    expect(p.prevStart).toBe(frame.count); // nothing left from the previous layer
-  });
-
-  it("splits two different frames at the same azimuth, not the same index", () => {
-    // In a sequence the two layers are different keyframes with different point
-    // counts, so the split has to be computed per frame from the azimuth - using
-    // one index for both would tear the display.
-    const a = randomFrame(9000, 1);
-    const b = randomFrame(4000, 2);
-    const azIdx = 900;
-    const p = sweepPartition(a, b, azIdx);
-    expect(p.currentEnd).toBe(sweptPointCount(a, azIdx));
-    expect(p.prevStart).toBe(sweptPointCount(b, azIdx));
-    // and each layer's boundary really is at that azimuth
-    if (p.currentEnd < a.count) expect(a.azIdx[a.order[p.currentEnd]]).toBeGreaterThanOrEqual(azIdx);
-    if (p.prevStart < b.count) expect(b.azIdx[b.order[p.prevStart]]).toBeGreaterThanOrEqual(azIdx);
+    expect(total).toBe(frame.count);
   });
 });

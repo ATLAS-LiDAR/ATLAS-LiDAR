@@ -12,11 +12,12 @@
  *  3. The sweep reveals points in true azimuth order by walking a prefix of
  *     `frame.order`, which is already azimuth-sorted. The animation therefore
  *     shows the order the sensor really acquired the cloud, not a decoration.
- *  4. The display PERSISTS: it does not blank at the end of a revolution. Each
- *     azimuth column keeps whatever the beam last saw there, so the screen is the
- *     current frame ahead of the beam and the previous frame behind it. On a
- *     static frame the two layers reassemble one cloud; in a sequence they are two
- *     keyframes, which is the mosaic a spinning sensor really produces.
+ *  4. The display ACCUMULATES. It starts empty, fills in behind the beam during
+ *     the first revolution, and from then on is always full - with every azimuth
+ *     sector holding the observation from the last time the beam passed it. It
+ *     never blanks at the wrap. Sector ownership lives in an accumulation buffer
+ *     (see core/sweep.js), so a driving sequence keeps stale keyframe data in the
+ *     sectors behind the beam until it comes round to refresh them.
  *
  * ATLAS's removal sector is drawn as what it is - a hard rectangle in azimuth,
  * uniform inside - and is visually distinct from the v1 physics envelope, which
@@ -128,7 +129,8 @@ export function renderBEV(canvas, {
   pointSize = 0,
   sweep = null,
   sectorActive = false,
-  prevLayer = null,
+  accum = null,
+  layers = null,
 }) {
   const ctx = canvas.getContext("2d");
   const v = makeView(canvas, rangeM);
@@ -139,9 +141,7 @@ export function renderBEV(canvas, {
   new Uint32Array(imageData.data.buffer).fill(packBg(PALETTE.bg));
 
   // --- real returns ---
-  // Persistent display: the columns behind the beam come from the previous layer,
-  // the columns it has already passed this revolution from the current frame.
-  const drawReturns = (f, mask, from, to) => {
+  const drawPointRange = (f, mask, from, to) => {
     for (let k = from; k < to; k++) {
       const i = f.order[k];
       const destroyed = mask !== null && mask[i] === 0;
@@ -156,60 +156,48 @@ export function renderBEV(canvas, {
       );
     }
   };
-
-  if (!sweep) {
-    drawReturns(frame, keepMask, 0, frame.count);
-  } else {
-    if (prevLayer && prevLayer.frame) {
-      drawReturns(prevLayer.frame, prevLayer.keepMask ?? null, prevLayer.prevStart, prevLayer.frame.count);
-    }
-    drawReturns(frame, keepMask, 0, Math.min(sweep.cutoff, frame.count));
-  }
-
-  // Added points (phantom / range-replaced) follow the same rule: ahead of the
-  // beam they belong to the previous layer, behind it to the current frame.
-  const splatSet = (set, colour) => {
+  const splatSet = (set, colour, ownsColumn = null, sensor = null) => {
     if (!set) return;
     for (let i = 0; i < set.x.length; i++) {
-      const [sx, sy] = v.px(set.x[i], set.y[i]);
-      if (sx < 0 || sx >= W || sy < 0 || sy >= H) continue;
-      splat(img, W, H, sx, sy, colour, 1, 1);
-    }
-  };
-  const azOf = (set, i) => {
-    const a = set.az ? set.az[i] : Math.atan2(set.y[i], set.x[i]);
-    return a < 0 ? a + 2 * Math.PI : a;
-  };
-  const splitSet = (set, colour) => {
-    if (!set) return;
-    for (let i = 0; i < set.x.length; i++) {
-      if (azOf(set, i) > sweep.az) continue; // not yet re-scanned this revolution
-      const [sx, sy] = v.px(set.x[i], set.y[i]);
-      if (sx < 0 || sx >= W || sy < 0 || sy >= H) continue;
-      splat(img, W, H, sx, sy, colour, 1, 1);
-    }
-  };
-  const splitSetAhead = (set, colour) => {
-    if (!set) return;
-    for (let i = 0; i < set.x.length; i++) {
-      if (azOf(set, i) <= sweep.az) continue; // already refreshed by the current frame
+      if (ownsColumn) {
+        let a = set.az ? set.az[i] : Math.atan2(set.y[i], set.x[i]);
+        if (a < 0) a += 2 * Math.PI;
+        if (!ownsColumn(Math.min(sensor.azCellCount - 1, Math.floor(a / sensor.azRes)))) continue;
+      }
       const [sx, sy] = v.px(set.x[i], set.y[i]);
       if (sx < 0 || sx >= W || sy < 0 || sy >= H) continue;
       splat(img, W, H, sx, sy, colour, 1, 1);
     }
   };
 
-  if (!sweep) {
+  if (!accum) {
+    // whole frame at once (paused / "full frame" mode)
+    drawPointRange(frame, keepMask, 0, frame.count);
     splatSet(replacement, PALETTE.replaced);
     splatSet(spoof, PALETTE.injected);
   } else {
-    if (prevLayer) {
-      splitSetAhead(prevLayer.replacement, PALETTE.replaced);
-      splitSetAhead(prevLayer.spoof, PALETTE.injected);
+    // Draw each azimuth sector from whichever observation currently owns it.
+    // Sectors never visited stay empty, which is what makes the first revolution
+    // build up from nothing.
+    const nBeams = frame.sensor.nBeams;
+    const obs = accum.observed;
+    for (let c = 0; c < obs.length; c++) {
+      const owner = obs[c];
+      if (owner < 0) continue;
+      const layer = layers.get(owner);
+      if (!layer) continue;
+      const lo = c * nBeams;
+      drawPointRange(layer.frame, layer.keepMask ?? null, layer.frame.offsets[lo], layer.frame.offsets[lo + nBeams]);
     }
-    splitSet(replacement, PALETTE.replaced);
-    splitSet(spoof, PALETTE.injected);
+    // added points belong to the sector they sit in, and only if that sector is
+    // still owned by the observation that created them
+    for (const [id, layer] of layers) {
+      const owns = (col) => obs[col] === id;
+      splatSet(layer.replacement, PALETTE.replaced, owns, frame.sensor);
+      splatSet(layer.spoof, PALETTE.injected, owns, frame.sensor);
+    }
   }
+
   ctx.putImageData(imageData, 0, 0);
 
   // --- vector overlays ---

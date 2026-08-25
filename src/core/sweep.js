@@ -30,30 +30,67 @@ export function sweptPointCount(frame, azIdx) {
 }
 
 /**
- * Split a persistent display into its two layers.
+ * Per-sector accumulation buffer.
  *
- * A real PPI display does not blank at the end of a revolution: each azimuth
- * column keeps showing whatever the beam last saw there. So at any sweep
- * position the screen is the CURRENT frame for the columns already passed, plus
- * the PREVIOUS frame for the columns not yet reached - and in a sequence that
- * means the cloud on screen is genuinely a mosaic of two keyframes, which is what
- * a spinning sensor actually produces.
+ * A spinning sensor does not show you a whole cloud at once, and it does not
+ * blank when it wraps. It observes one azimuth sector at a time and each sector
+ * keeps whatever was last seen there. So the display:
  *
- * With a single static frame the two layers reassemble exactly one copy of the
- * cloud, so nothing blinks out at the wrap.
+ *   - starts EMPTY (nothing observed yet),
+ *   - fills in behind the beam during the first revolution,
+ *   - and from then on is always full, with every sector holding the observation
+ *     from the last time the beam passed it.
  *
- * Both boundaries are computed from the AZIMUTH, not from one shared index: the
- * two keyframes have different point counts, and using one index for both would
- * tear the display.
- *
- * @returns {{currentEnd: number, prevStart: number}}
- *   draw frame.order[0 .. currentEnd) and prevFrame.order[prevStart .. count)
+ * `observed[c]` is the id of the observation that currently owns azimuth column
+ * c, or -1 if the beam has never been there. Ids let a driving sequence keep
+ * stale keyframe data in the sectors behind the beam until it comes back round to
+ * refresh them.
  */
-export function sweepPartition(frame, prevFrame, azIdx) {
-  return {
-    currentEnd: sweptPointCount(frame, azIdx),
-    prevStart: sweptPointCount(prevFrame, azIdx),
-  };
+export function makeAccumulator(sensor) {
+  const observed = new Int32Array(sensor.azCellCount).fill(-1);
+  return { observed, azCellCount: sensor.azCellCount };
+}
+
+/** Clear the buffer back to "nothing observed". */
+export function resetAccumulator(acc) {
+  acc.observed.fill(-1);
+}
+
+/** How many sectors currently hold an observation. */
+export function accumulatedColumns(acc) {
+  let n = 0;
+  for (let c = 0; c < acc.observed.length; c++) if (acc.observed[c] >= 0) n++;
+  return n;
+}
+
+/**
+ * Record that the beam swept from `fromAz` to `toAz`, so those sectors now hold
+ * observation `layerId`. Handles the wrap past zero.
+ */
+export function markSwept(acc, fromAz, toAz, layerId, sensor) {
+  const n = sensor.azCellCount;
+  const a = azimuthCellIndex(fromAz, sensor.azRes);
+  const b = azimuthCellIndex(toAz, sensor.azRes);
+  acc.observed[b] = layerId;
+  if (a === b) return;
+  // walk forward from a to b, wrapping; guard against a full extra lap
+  let c = a;
+  for (let guard = 0; guard <= n; guard++) {
+    acc.observed[c] = layerId;
+    if (c === b) break;
+    c = c + 1 === n ? 0 : c + 1;
+  }
+}
+
+/**
+ * The contiguous slice of `frame.order` holding every beam of azimuth column `c`.
+ * Contiguous because cellKey = azIdx * nBeams + beamIdx, so one column is one
+ * block of the CSR index.
+ */
+export function columnRange(frame, col) {
+  const nBeams = frame.sensor.nBeams;
+  const lo = col * nBeams;
+  return { start: frame.offsets[lo], end: frame.offsets[lo + nBeams] };
 }
 
 /** Sensor column index for a sweep azimuth. */
