@@ -8,9 +8,12 @@ import {
 import {
   centerTrace,
   placeTraceRelative,
+  placeTraceGlobal,
+  transformSpoofToEgoFrame,
   makeAtlasRng,
   RELATIVE_OFFSET,
 } from "../src/core/atlas-inject.js";
+import { applyPose, invertRigid4, poseYaw } from "../src/core/pose.js";
 
 describe("trace library loading", () => {
   it("lists the exported libraries", async () => {
@@ -273,5 +276,88 @@ describe("makeAtlasRng", () => {
       expect(k).toBeLessThan(7);
       expect(Number.isInteger(k)).toBeTruthy();
     }
+  });
+});
+
+describe("placeTraceGlobal — port of ATLAS place_trace_global", () => {
+  function libStub() {
+    const mk = (cx, cy, yaw) => ({
+      x: Float64Array.from([cx + 1, cx, cx - 1]),
+      y: Float64Array.from([cy, cy + 0.5, cy]),
+      z: Float64Array.from([-1.4, -1.2, -1.0]),
+      intensity: Float32Array.from([5, 10, 15]),
+      box: [cx, cy, -1.2, 4.2, 1.8, 1.6, yaw],
+    });
+    return [mk(20, 3, 0.4), mk(-15, 8, -1.1), mk(30, -12, 2.0)];
+  }
+  /** ego->global: rotation about z then translation. */
+  const pose = (yaw, tx, ty) => {
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    return [c, -s, 0, tx, s, c, 0, ty, 0, 0, 1, 0, 0, 0, 0, 1];
+  };
+
+  it("lifts the phantom into world coordinates using the anchor pose", () => {
+    const anchor = pose(0.7, 100, -50);
+    const g = placeTraceGlobal(libStub(), { seed: 5, anchorPose: anchor });
+    // the box is far from the origin because it now lives in the world frame
+    expect(Math.hypot(g.box[0], g.box[1])).toBeGreaterThan(50);
+    expect(g.anno.perturbation).toBe("global_position_fixed");
+  });
+
+  it("round-trips: global placement seen from the anchor frame equals the relative one", () => {
+    // The load-bearing invariant. place_trace_global is place_trace_relative
+    // followed by a lift into the world, so bringing it back down into the anchor
+    // frame must reproduce the ego-relative placement exactly.
+    const anchor = pose(0.7, 100, -50);
+    const seed = 17;
+    const rel = placeTraceRelative(libStub(), { seed });
+    const glob = placeTraceGlobal(libStub(), { seed, anchorPose: anchor });
+    const back = transformSpoofToEgoFrame(glob.points, glob.box, anchor);
+
+    expect(back.box.slice(0, 3)).toBeCloseToArray(rel.box.slice(0, 3), 1e-6);
+    expect(back.box[6]).toBeCloseTo(rel.box[6], 1e-6);
+    expect(back.points.x).toBeCloseToArray(rel.points.x, 1e-6);
+    expect(back.points.y).toBeCloseToArray(rel.points.y, 1e-6);
+    expect(back.points.z).toBeCloseToArray(rel.points.z, 1e-6);
+  });
+
+  it("keeps the phantom fixed in the world as the ego drives past", () => {
+    // This is what a world-fixed phantom means: same world position, but its
+    // ego-relative range shrinks then grows as the vehicle drives by.
+    const anchor = pose(0, 0, 0);
+    const glob = placeTraceGlobal(libStub(), { seed: 9, anchorPose: anchor });
+    const ranges = [];
+    for (const tx of [0, 5, 10, 15, 20, 25]) {
+      const ego = transformSpoofToEgoFrame(glob.points, glob.box, pose(0, tx, 0));
+      ranges.push(Math.hypot(ego.box[0], ego.box[1]));
+    }
+    // driving forward toward a phantom ~15-20 m ahead: range decreases
+    for (let i = 1; i < 4; i++) expect(ranges[i]).toBeLessThan(ranges[i - 1]);
+    // and the world position never changed
+    const again = transformSpoofToEgoFrame(glob.points, glob.box, pose(0, 0, 0));
+    expect(again.box.slice(0, 2)).toBeCloseToArray(glob.box.slice(0, 2), 1e-9);
+  });
+
+  it("adds the anchor heading to the box yaw, and subtracts it coming back", () => {
+    const anchor = pose(1.1, 0, 0);
+    const glob = placeTraceGlobal(libStub(), { seed: 4, anchorPose: anchor });
+    const rel = placeTraceRelative(libStub(), { seed: 4 });
+    expect(glob.box[6]).toBeCloseTo(rel.box[6] + poseYaw(anchor), 1e-9);
+    const back = transformSpoofToEgoFrame(glob.points, glob.box, anchor);
+    expect(back.box[6]).toBeCloseTo(rel.box[6], 1e-9);
+  });
+
+  it("honours a chosen trace and location, like the relative placement does", () => {
+    const anchor = pose(0, 0, 0);
+    const g = placeTraceGlobal(libStub(), { seed: 1, anchorPose: anchor, traceIdx: 2, offsetXY: [30, -2] });
+    expect(g.anno.traceIdx).toBe(2);
+    // with an identity anchor, world coords equal ego coords
+    expect(g.box[0]).toBeCloseTo(30, 1e-9);
+    expect(g.box[1]).toBeCloseTo(-2, 1e-9);
+  });
+
+  it("requires an anchor pose", () => {
+    expect(() => placeTraceGlobal(libStub(), { seed: 1 })).toThrow("anchorPose");
   });
 });

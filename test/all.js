@@ -22,5 +22,7 @@ import "./export.test.js";
 import "./atlas-removal.test.js";
 import "./sweep.test.js";
 import "./atlas-inject.test.js";
+import "./pose.test.js";
+import "./schedule.test.js";
 
 await runAndReport();

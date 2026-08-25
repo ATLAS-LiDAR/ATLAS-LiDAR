@@ -9,6 +9,7 @@ import {
   sectorMask,
   clampAngleStep,
   selectInitialTarget,
+  matchWithVelocity,
   ahfrRemoval,
   makeAtlasRng,
   AHFR_DEFAULTS,
@@ -366,5 +367,71 @@ describe("ahfrRemoval", () => {
     expect(AHFR_DEFAULTS.minTargetRangeM).toBe(6);
     expect(AHFR_DEFAULTS.centerJitterStdDeg).toBeCloseTo(0.05, 1e-12);
     expect(AHFR_DEFAULTS.fixElevation).toBeTruthy();
+  });
+});
+
+describe("matchWithVelocity — port of ATLAS's constant-velocity tracker", () => {
+  // boxes are [x,y,z,dx,dy,dz,yaw,vx,vy,class] - velocity in cols 7,8 and the
+  // class in the LAST column, which is what ATLAS indexes
+  const mk = (x, y, vx = 0, vy = 0, cls = 1, dx = 4.2, dy = 1.8, dz = 1.6) =>
+    [x, y, 0, dx, dy, dz, 0, vx, vy, cls];
+
+  it("matches the candidate nearest the constant-velocity prediction", () => {
+    const prev = mk(20, 0, 10, 0); // moving +10 m/s in x
+    // at dt = 0.5 the prediction is x = 25
+    const curr = [mk(21, 0), mk(25.2, 0), mk(30, 0)];
+    const m = matchWithVelocity(prev, null, curr, { dt: 0.5 });
+    expect(m.index).toBe(1);
+    expect(m.dist).toBeLessThan(1);
+  });
+
+  it("uses dt: nuScenes keyframes are 2 Hz, and Waymo's 0.1 loses the track", () => {
+    // The trap the docstring calls out. A vehicle at 10 m/s moves 5 m between
+    // nuScenes keyframes; predicting only 1 m ahead leaves a 4 m residual, and a
+    // fast enough target then falls outside max_step and is dropped silently.
+    const prev = mk(20, 0, 24, 0); // 24 m/s
+    const curr = [mk(32, 0)]; // 12 m ahead: exactly where dt=0.5 predicts
+    expect(matchWithVelocity(prev, null, curr, { dt: 0.5 }).index).toBe(0);
+    expect(matchWithVelocity(prev, null, curr, { dt: 0.1 }).index).toBe(null);
+  });
+
+  it("rejects candidates beyond the spatial gate", () => {
+    const prev = mk(20, 0);
+    expect(matchWithVelocity(prev, null, [mk(40, 0)], { dt: 0.5, maxStep: 6 }).index).toBe(null);
+    expect(matchWithVelocity(prev, null, [mk(24, 0)], { dt: 0.5, maxStep: 6 }).index).toBe(0);
+  });
+
+  it("rejects a candidate whose volume differs too much", () => {
+    const prev = mk(20, 0);
+    // a bus where a car used to be, 1 m away: inside the spatial gate but wrong size
+    const bus = mk(21, 0, 0, 0, 1, 12, 3, 3.5);
+    expect(matchWithVelocity(prev, null, [bus], { dt: 0.5, maxVolumeRatio: 2 }).index).toBe(null);
+    // and a similarly sized car matches
+    expect(matchWithVelocity(prev, null, [mk(21, 0)], { dt: 0.5 }).index).toBe(0);
+  });
+
+  it("only considers the requested class", () => {
+    const prev = mk(20, 0);
+    const ped = mk(20.5, 0, 0, 0, 2, 0.8, 0.8, 1.8);
+    expect(matchWithVelocity(prev, null, [ped], { dt: 0.5, targetClass: 1 }).index).toBe(null);
+  });
+
+  it("returns nothing when there are no candidates at all", () => {
+    expect(matchWithVelocity(mk(20, 0), null, [], { dt: 0.5 }).index).toBe(null);
+    expect(matchWithVelocity(mk(20, 0), null, null, { dt: 0.5 }).index).toBe(null);
+  });
+
+  it("prefers the nearest of several plausible candidates", () => {
+    const prev = mk(20, 0);
+    const curr = [mk(23, 0), mk(21, 0), mk(24, 0)];
+    expect(matchWithVelocity(prev, null, curr, { dt: 0.5 }).index).toBe(1);
+  });
+
+  it("returns the matched box itself so the caller can carry state forward", () => {
+    const prev = mk(20, 0, 4, 0);
+    const curr = [mk(22, 0.5, 4, 0)];
+    const m = matchWithVelocity(prev, null, curr, { dt: 0.5 });
+    expect(m.box[0]).toBeCloseTo(22, 1e-9);
+    expect(m.box[1]).toBeCloseTo(0.5, 1e-9);
   });
 });

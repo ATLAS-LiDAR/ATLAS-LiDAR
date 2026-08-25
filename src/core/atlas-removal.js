@@ -178,6 +178,69 @@ export function selectInitialTarget(gtBoxes, {
   return { index: idx, box: gtBoxes[idx].slice() };
 }
 
+/** Volume of a box [x,y,z,dx,dy,dz,...]. */
+function boxVolume(b) {
+  return Math.abs(b[3] * b[4] * b[5]);
+}
+
+/**
+ * Track the target across frames: nearest-neighbour matching against a
+ * constant-velocity prediction, with spatial, class and size gates. Port of
+ * ATLAS's match_with_velocity.
+ *
+ * Boxes must be [x, y, z, dx, dy, dz, yaw, vx, vy, ..., class] - velocity in
+ * columns 7 and 8 and the class in the LAST column, which is how ATLAS indexes
+ * them.
+ *
+ * `dt` MATTERS. ATLAS defaults to 0.1 for Waymo, but nuScenes KEYFRAMES are
+ * 2 Hz, so callers there must pass 0.5. Its own docstring warns that otherwise
+ * the prediction is 5x too short and the residual for a fast vehicle exceeds
+ * maxStep, silently dropping the track.
+ *
+ * @returns {{box: number[]|null, index: number|null, dist: number|null}}
+ */
+export function matchWithVelocity(prevBox, prevPrevBox, currBoxes, {
+  targetClass = 1,
+  maxStep = 6.0,
+  maxVolumeRatio = 2.0,
+  classCol = -1,
+  dt = 0.1,
+} = {}) {
+  const none = { box: null, index: null, dist: null };
+  if (!currBoxes || currBoxes.length === 0 || !prevBox) return none;
+
+  const cls = (b) => Math.round(classCol < 0 ? b[b.length + classCol] : b[classCol]);
+  const valid = [];
+  for (let i = 0; i < currBoxes.length; i++) {
+    if (cls(currBoxes[i]) === targetClass) valid.push(i);
+  }
+  if (valid.length === 0) return none;
+
+  // constant-velocity prediction from the previous box's own velocity
+  const vx = prevBox[7] ?? 0;
+  const vy = prevBox[8] ?? 0;
+  const pred = [prevBox[0] + vx * dt, prevBox[1] + vy * dt, prevBox[2]];
+
+  const scored = valid
+    .map((i) => ({
+      i,
+      d: Math.hypot(currBoxes[i][0] - pred[0], currBoxes[i][1] - pred[1], currBoxes[i][2] - pred[2]),
+    }))
+    .sort((a, b) => a.d - b.d);
+
+  const prevVol = boxVolume(prevBox);
+  for (const { i, d } of scored) {
+    if (d > maxStep) break; // sorted, so everything after is farther
+    if (prevVol > 0) {
+      const v = boxVolume(currBoxes[i]);
+      const ratio = Math.max(v, prevVol) / Math.min(v, prevVol);
+      if (ratio > maxVolumeRatio) continue;
+    }
+    return { box: currBoxes[i].slice(), index: i, dist: d };
+  }
+  return none;
+}
+
 /**
  * One frame of A-HFR removal.
  *
