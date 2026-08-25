@@ -29,7 +29,7 @@ import { composeCloud } from "../core/compose.js";
 import { buildAttackBundle, downloadBundle, bundleFilename } from "../io/export.js";
 import { pickBoxAt, normalizeBox } from "../core/iou.js";
 import { attackerGeometry, worldFromEgoPoint, ATTACKER_MODES,
-         victimApertureRad, attackerCanIlluminate, illuminationWindow,
+         victimApertureRad, attackerCanIlluminate, illuminationWindow, heardColumns,
          illuminationDuty } from "../core/attacker.js";
 import { makeAccumulator, resetAccumulator, markSwept, accumulatedColumns,
          advanceSweep, sweepAzToCell, beamInSector,
@@ -70,6 +70,9 @@ const S = {
   attackerMode: "static",   // roadside box vs vehicle-mounted
   attackerWorld: null,      // fixed world position of a roadside attacker
   attackerGeom: null,
+  // false: show every point ATLAS generated. true: dim the ones this attacker
+  // could not have produced. Neither changes what is generated.
+  gateByReach: false,
   // sequence mode
   isSequence: false,
   seq: null,
@@ -460,10 +463,31 @@ async function recompute() {
   });
   S.attackerGeom = geom;
   const laserPos = [geom.egoPos[0], geom.egoPos[1]];
+
+  // Which columns this attacker could act on at all. A spoofed return outside the
+  // band is not producible from where it stands, however hard it fires.
+  const apRadNow = victimApertureRad(sn);
+  const bandNow = illuminationWindow({
+    attackerBearing: geom.bearing,
+    envelopeHalfWidthRad: geom.envelope.feasible ? geom.envelope.halfWidthAz : 0,
+    apertureRad: apRadNow,
+  });
+  const heard = heardColumns(sn, bandNow);
+  let producible = 0;
+  let unproducible = 0;
+  if (spoof) {
+    for (let i = 0; i < spoof.az.length; i++) {
+      const c = Math.min(sn.azCellCount - 1, Math.floor(spoof.az[i] / sn.azRes));
+      if (heard[c]) producible++;
+      else unproducible++;
+    }
+  }
+  S.producible = producible;
+  S.unproducible = unproducible;
   S.last = {
     sensor: sn, spoofer: sp, reach, keepMask, spoof, result,
     phantomBox, atlasSector, secMask, centerAz, laserPos,
-    frame, replacement,
+    frame, replacement, heard,
     ms: performance.now() - t0,
   };
 
@@ -471,7 +495,7 @@ async function recompute() {
   // stay alive only while some sector still shows them.
   if (!S.accum || S.accum.azCellCount !== sn.azCellCount) S.accum = makeAccumulator(sn);
   S.layerId += 1;
-  S.layers.set(S.layerId, { frame, keepMask, spoof, replacement });
+  S.layers.set(S.layerId, { frame, keepMask, spoof, replacement, heard });
   pruneLayers();
   draw();
   report();
@@ -563,6 +587,7 @@ function draw() {
     atlasSector,
     sectorActive,
     laser,
+    heard: S.gateByReach ? S.last.heard : null,
     aperture: sweep ? { az: S.sweepAz, halfWidthRad: apRad / 2 } : null,
     illumWindow: illum,
     targetBox: targetView,
@@ -679,6 +704,11 @@ function report() {
     const p = result.placed;
     rows.push(
       stat("Phantom points", st.injected.toLocaleString()),
+      stat(
+        "Producible here",
+        `${(S.producible ?? 0).toLocaleString()}<small>/${st.injected.toLocaleString()}</small>`,
+        (S.unproducible ?? 0) > 0 ? "warn2" : "good"
+      ),
       stat("Trace", `#${p.anno.traceIdx}<small> / ${p.anno.nTracePoints}pt</small>`),
       stat("Placed at", `${p.box[0].toFixed(1)}<small>,${p.box[1].toFixed(1)} m</small>`),
       stat("Yaw", `${(p.anno.yaw / DEG).toFixed(1)}<small>°</small>`),
@@ -949,6 +979,10 @@ export async function boot() {
   $("tracePrev").onclick = () => stepTrace(-1);
   $("traceNext").onclick = () => stepTrace(1);
   bind("standoff", (v) => { S.standoff = v; S.attackerWorld = null; });
+  seg(["viewAtlas", "viewPhysical"], (i) => {
+    S.gateByReach = i === 1;
+    draw();
+  });
   seg(["atkStatic", "atkDynamic"], (i) => {
     S.attackerMode = ATTACKER_MODES[i === 0 ? 0 : 1];
     S.attackerWorld = null; // re-anchor from the current aim
@@ -1084,6 +1118,11 @@ export async function boot() {
   // Deterministic sweep position, for screenshots and headless verification:
   // ?sweptTo=90 marks the first 90 degrees as observed and stops there.
   if (q.has("sweptTo")) S.pendingSweptTo = (parseFloat(q.get("sweptTo")) * Math.PI) / 180;
+  if (q.get("producible") === "1") {
+    S.gateByReach = true;
+    $("viewAtlas").setAttribute("aria-pressed", "false");
+    $("viewPhysical").setAttribute("aria-pressed", "true");
+  }
   if (q.get("attacker") === "dynamic") {
     S.attackerMode = "dynamic";
     $("atkStatic").setAttribute("aria-pressed", "false");

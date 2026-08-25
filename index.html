@@ -165,11 +165,16 @@
           <button id="atkStatic" aria-pressed="true">Roadside</button>
           <button id="atkDynamic" aria-pressed="false">Follows ego</button>
         </div>
+        <div class="seg" role="group" aria-label="what the points show">
+          <button id="viewAtlas" aria-pressed="true">ATLAS output</button>
+          <button id="viewPhysical" aria-pressed="false">Producible only</button>
+        </div>
         <div class="laser" id="laserInfo">—</div>
         <label class="field"><div class="cap"><span>Standoff</span><span class="val" id="standoffVal"></span></div>
           <input type="range" id="standoff" min="4" max="60" step="1" value="18"></label>
         <p class="note"><b>Roadside</b> holds one world position, so it approaches and recedes as you drive past — and its aim drifts off the attacked sector. <b>Follows ego</b> is vehicle-mounted and holds its geometry. Shift-click the left view to move it.</p>
-        <p class="note">ATLAS models no attacker position, so this does not change the attack unless the physics overlay is on — it reports whether real hardware standing there could have produced it.</p>
+        <p class="note"><b>ATLAS output</b> shows every point ATLAS generated. <b>Producible only</b> dims the ones a box standing here could not have made: a spoofed return exists only if the attacker was heard while that column's beam was listening, so anything outside its reach can never appear.</p>
+        <p class="note">Neither setting changes what ATLAS generates — the attack itself is only gated by the physics overlay in Advanced.</p>
       </div>
 
       <div class="group">

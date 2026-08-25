@@ -107,6 +107,29 @@ Shift-click the left view to plant it. Its position does **not** change the atta
 unless the physics overlay is on; it reports whether real hardware standing there
 could have produced what ATLAS generated.
 
+**Two views, toggled: ATLAS output vs producible.** A spoofed return only exists
+if the attacker's light reached the detector while that column's beam was
+listening, so a column outside its reach can never carry one - whatever ATLAS
+generated there. The toggle switches between showing every point ATLAS produced
+and dimming the ones a box standing here could not have made. Neither setting
+changes what is generated; the attack itself is only gated by the physics overlay.
+
+Driving past a roadside attacker with a world-fixed phantom, this is what happens
+to the same ATLAS output:
+
+| keyframe | attacker | reach | producible |
+|---|---|---|---|
+| 0 | 18.0 m, 11° | ±5.2° | **141 / 141** |
+| 6 | 27.0 m, −46° | ±4.4° | 10 / 15 |
+| 12 | 47.8 m, −66° | ±2.9° | **0 / 38** |
+| 18 | 55.2 m, −69° | ±2.3° | 0 / 5 |
+
+By six seconds in, a stationary roadside box can produce **none** of the phantom
+ATLAS is still placing - it has been left behind and its reach no longer covers
+it. Azimuths are sequential (each is a separate firing, so the phantom fills in as
+the beam crosses the band) while the elevations of one column are simultaneous,
+which is why the real capture loses all 16 channels at once.
+
 **When the attacker can actually be heard.** The victim's receiver is
 co-boresighted with its emitter, so at any instant it only accepts light arriving
 within a narrow cone around the direction the beam currently points - 0.11° on an

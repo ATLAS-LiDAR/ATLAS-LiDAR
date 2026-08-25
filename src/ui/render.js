@@ -123,6 +123,7 @@ export function renderBEV(canvas, {
   reach = null,
   atlasSector = null,
   laser = null,
+  heard = null,      // per-column: can the attacker act there at all
   aperture = null,   // {az, halfWidthRad} the victim's instantaneous acceptance
   illumWindow = null, // {centerAz, halfWidthRad} where the attacker can be heard
 
@@ -161,25 +162,37 @@ export function renderBEV(canvas, {
       );
     }
   };
-  const splatSet = (set, colour, ownsColumn = null, sensor = null) => {
+  /**
+   * Draw an added-point set.
+   *
+   * `heard` gates which columns can carry a spoofed return at all: the attacker's
+   * light only becomes a point if it reached the detector while that column's beam
+   * was listening, so a column outside its band can never hold one. Points ATLAS
+   * generated outside the band are drawn FAINT rather than hidden - hiding them
+   * would misrepresent ATLAS, drawing them solid would misrepresent the physics.
+   */
+  const splatSet = (set, colour, ownsColumn = null, sensor = null, heard = null) => {
     if (!set) return;
     for (let i = 0; i < set.x.length; i++) {
-      if (ownsColumn) {
+      let col = null;
+      if (ownsColumn || heard) {
         let a = set.az ? set.az[i] : Math.atan2(set.y[i], set.x[i]);
         if (a < 0) a += 2 * Math.PI;
-        if (!ownsColumn(Math.min(sensor.azCellCount - 1, Math.floor(a / sensor.azRes)))) continue;
+        col = Math.min(sensor.azCellCount - 1, Math.floor(a / sensor.azRes));
       }
+      if (ownsColumn && !ownsColumn(col)) continue;
+      const producible = !heard || heard[col] === 1;
       const [sx, sy] = v.px(set.x[i], set.y[i]);
       if (sx < 0 || sx >= W || sy < 0 || sy >= H) continue;
-      splat(img, W, H, sx, sy, colour, 1, 1);
+      splat(img, W, H, sx, sy, colour, producible ? 1 : 0.22, producible ? 1 : 0);
     }
   };
 
   if (!accum) {
     // whole frame at once (paused / "full frame" mode)
     drawPointRange(frame, keepMask, 0, frame.count);
-    splatSet(replacement, PALETTE.replaced);
-    splatSet(spoof, PALETTE.injected);
+    splatSet(replacement, PALETTE.replaced, null, frame.sensor, heard);
+    splatSet(spoof, PALETTE.injected, null, frame.sensor, heard);
   } else {
     // Draw each azimuth sector from whichever observation currently owns it.
     // Sectors never visited stay empty, which is what makes the first revolution
@@ -198,8 +211,9 @@ export function renderBEV(canvas, {
     // still owned by the observation that created them
     for (const [id, layer] of layers) {
       const owns = (col) => obs[col] === id;
-      splatSet(layer.replacement, PALETTE.replaced, owns, frame.sensor);
-      splatSet(layer.spoof, PALETTE.injected, owns, frame.sensor);
+      const gate = heard === null ? null : layer.heard;
+      splatSet(layer.replacement, PALETTE.replaced, owns, frame.sensor, gate);
+      splatSet(layer.spoof, PALETTE.injected, owns, frame.sensor, gate);
     }
   }
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from "./harness.js";
 import { configureSensor } from "../src/core/sensor.js";
 import { configureSpoofer } from "../src/core/spoofer.js";
 import {
+  heardColumns,
   victimApertureRad,
   attackerCanIlluminate,
   illuminationDuty,
@@ -338,5 +339,58 @@ describe("victim aperture and when the attacker can actually get in", () => {
     expect(w.centerAz).toBeCloseTo(30 * DEG, 1e-12);
     expect(w.halfWidthRad).toBeGreaterThan(5 * DEG);
     expect(w.halfWidthRad).toBeCloseTo(5 * DEG + victimApertureRad(sensor) / 2, 1e-12);
+  });
+});
+
+describe("heardColumns — which azimuth columns the attacker can act on", () => {
+  const band = (centerDeg, halfDeg) => ({ centerAz: centerDeg * DEG, halfWidthRad: halfDeg * DEG });
+
+  it("marks only the columns inside the band", () => {
+    const m = heardColumns(sensor, band(0, 5));
+    // 5 deg either side of 0, on a 0.33 deg lattice
+    const expected = Math.round((10 * DEG) / sensor.azRes);
+    let n = 0;
+    for (let c = 0; c < m.length; c++) n += m[c];
+    expect(n).toBeCloseTo(expected, 3);
+    expect(m[0]).toBe(1);                       // dead ahead
+    expect(m[Math.round(90 * DEG / sensor.azRes)]).toBe(0); // 90 deg away
+  });
+
+  it("wraps around zero", () => {
+    const m = heardColumns(sensor, band(0, 3));
+    expect(m[0]).toBe(1);
+    expect(m[m.length - 1]).toBe(1); // just below 360 deg
+    expect(m[Math.round(180 * DEG / sensor.azRes)]).toBe(0);
+  });
+
+  it("centres on the attacker's bearing, wherever that is", () => {
+    const m = heardColumns(sensor, band(120, 4));
+    expect(m[Math.round(120 * DEG / sensor.azRes)]).toBe(1);
+    expect(m[Math.round(0 * DEG / sensor.azRes)]).toBe(0);
+  });
+
+  it("grows with the band and vanishes without one", () => {
+    const count = (halfDeg) => {
+      const m = heardColumns(sensor, band(0, halfDeg));
+      let n = 0;
+      for (let c = 0; c < m.length; c++) n += m[c];
+      return n;
+    };
+    expect(count(20)).toBeGreaterThan(count(5));
+    expect(count(0)).toBeLessThanOrEqual(1);
+  });
+
+  it("marks everything for a band covering the whole turn", () => {
+    const m = heardColumns(sensor, band(0, 181));
+    let n = 0;
+    for (let c = 0; c < m.length; c++) n += m[c];
+    expect(n).toBe(sensor.azCellCount);
+  });
+
+  it("returns nothing marked when there is no band at all", () => {
+    const m = heardColumns(sensor, null);
+    let n = 0;
+    for (let c = 0; c < m.length; c++) n += m[c];
+    expect(n).toBe(0);
   });
 });

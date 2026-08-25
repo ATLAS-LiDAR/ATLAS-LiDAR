@@ -79,6 +79,26 @@ export function attackerCanIlluminate({ sweepAz, attackerBearing, envelopeHalfWi
   return Math.abs(d) <= w.halfWidthRad;
 }
 
+/**
+ * Which azimuth columns the attacker can act on at all.
+ *
+ * A spoofed return exists only if the attacker's light reached the detector while
+ * that column's beam was listening, so a column outside the band can never carry
+ * one - however hard the attacker fires, and whatever ATLAS may have generated
+ * there. This is what turns the coverage fraction into visibly missing points.
+ */
+export function heardColumns(sensor, band) {
+  const m = new Uint8Array(sensor.azCellCount);
+  if (!band) return m;
+  for (let c = 0; c < m.length; c++) {
+    const colAz = (c + 0.5) * sensor.azRes;
+    let d = wrapAz(colAz - band.centerAz);
+    if (d > Math.PI) d -= TWO_PI;
+    if (Math.abs(d) <= band.halfWidthRad) m[c] = 1;
+  }
+  return m;
+}
+
 /** Fraction of each revolution during which the attacker can be heard. */
 export function illuminationDuty({ envelopeHalfWidthRad, apertureRad }) {
   return Math.min(1, (2 * envelopeHalfWidthRad + apertureRad) / TWO_PI);
