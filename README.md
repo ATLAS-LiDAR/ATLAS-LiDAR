@@ -219,6 +219,46 @@ documented in the ports:
   returns/cell) rather than silently fixing it - that is precisely the question
   `osf_k6nf2/realizability.py` was written to ask.
 
+## Cross-validation against ATLAS's own code
+
+Reading two implementations and asserting they agree is a weak method — it had
+already produced eight wrong constants here. `tools/crossvalidate.py` measures
+agreement instead: it imports ATLAS's real functions
+(`kitti_atlas_common.spoof_frame`, `nuscenes_atlas_common.spoof_frame`,
+`removal.spoof_frame_ahfr_roadside`) and runs them and the sandbox on the same
+exported frame, the same trace and the same parameters, then compares integer
+outcomes — points requested, points injected, real returns destroyed, sector
+occupancy, and a checksum of the placed phantom.
+
+Both sides are made deterministic rather than statistically compared: every
+random draw is pinned to its extreme (`ZeroRng` / `zeroRng`), the trace index,
+offset and yaw are passed explicitly, `p_remove = 1`, the scan gate is forced
+open, and aim jitter is zero. On a single-return sensor `P_TWO = 0`, so
+occlusion resolution has nothing left to draw either.
+
+```
+$ tools/crossvalidate.py
+129 agree, 0 disagree, 0 skipped
+```
+
+The grid spans 3 frames × 5 traces × 5 placements plus all 6 tabulated wedge
+widths × 3 targets. It found two bugs that reading could not:
+
+- **`np.percentile(z, 5)` interpolates.** ATLAS's ground anchor takes the 5th
+  percentile of local scene z, and numpy's default method interpolates linearly
+  between the two straddling samples. Taking the lower sample shifted `dz` by
+  ~3 mm, which pushed six phantom points onto the next beam down and destroyed a
+  different set of real returns. `percentile5` now reproduces numpy exactly.
+- **float32 storage changed occlusion outcomes.** Positions were stored as
+  float32 while ATLAS works in float64, so a range that ties a real return
+  exactly in ATLAS came out marginally smaller here, taking the "phantom in
+  front" branch and destroying one extra point. The loaders and `PointFrame` now
+  keep positions in float64.
+
+Not covered: intensity (drawn at random on both sides, and geometrically inert),
+and anything downstream of numpy's RNG stream, which cannot be reproduced in
+JavaScript.
+
 ## The physics overlay is not ATLAS
 
 v1's model - power-derived reachable envelope, line of sight, time-of-flight relay

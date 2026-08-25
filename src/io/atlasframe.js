@@ -54,9 +54,14 @@ export function parseAtlasFrame(arrayBuffer) {
   const qz = block("z");
   const qi = block("intensity");
 
-  const x = new Float32Array(n);
-  const y = new Float32Array(n);
-  const z = new Float32Array(n);
+  // Float64 for positions: the payload is int16 * quantum, and computing that in
+  // float64 makes the coordinates bit-identical to what numpy produces from the
+  // same bytes. Rounding to float32 shifts ranges in the last bits, which turns
+  // an exact occlusion tie into a near-miss - a real off-by-one that
+  // tools/crossvalidate.py caught against ATLAS's float64 path.
+  const x = new Float64Array(n);
+  const y = new Float64Array(n);
+  const z = new Float64Array(n);
   const intensity = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     x[i] = qx[i] * q;
@@ -105,9 +110,14 @@ export function parseRawLidar(arrayBuffer, { stride = null, name = "upload", sen
     throw new Error("buffer of " + src.length + " floats is not a multiple of stride " + s);
   }
   const n = src.length / s;
-  const x = new Float32Array(n);
-  const y = new Float32Array(n);
-  const z = new Float32Array(n);
+  // Float64 for positions: the payload is int16 * quantum, and computing that in
+  // float64 makes the coordinates bit-identical to what numpy produces from the
+  // same bytes. Rounding to float32 shifts ranges in the last bits, which turns
+  // an exact occlusion tie into a near-miss - a real off-by-one that
+  // tools/crossvalidate.py caught against ATLAS's float64 path.
+  const x = new Float64Array(n);
+  const y = new Float64Array(n);
+  const z = new Float64Array(n);
   const intensity = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const o = i * s;

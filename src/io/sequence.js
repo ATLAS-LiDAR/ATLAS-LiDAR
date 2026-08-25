@@ -69,9 +69,14 @@ export function frameOfSequence(seq, index) {
   const q = header.posQuantum;
   const is = header.intensityScale;
 
-  const x = new Float32Array(n);
-  const y = new Float32Array(n);
-  const z = new Float32Array(n);
+  // Float64 for positions: the payload is int16 * quantum, and computing that in
+  // float64 makes the coordinates bit-identical to what numpy produces from the
+  // same bytes. Rounding to float32 shifts ranges in the last bits, which turns
+  // an exact occlusion tie into a near-miss - a real off-by-one that
+  // tools/crossvalidate.py caught against ATLAS's float64 path.
+  const x = new Float64Array(n);
+  const y = new Float64Array(n);
+  const z = new Float64Array(n);
   const intensity = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     x[i] = qx[s + i] * q;

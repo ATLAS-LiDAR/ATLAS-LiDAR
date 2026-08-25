@@ -111,9 +111,12 @@ export class PointFrame {
       );
     }
     const n = buf.length / stride;
-    const x = new Float32Array(n);
-    const y = new Float32Array(n);
-    const z = new Float32Array(n);
+    // Float64 positions, matching the loaders: float32 rounding shifts computed
+    // ranges in the last bits, which turns an exact occlusion tie into a near
+    // miss and destroys one extra return.
+    const x = new Float64Array(n);
+    const y = new Float64Array(n);
+    const z = new Float64Array(n);
     const intensity = new Float32Array(n);
     const time = stride >= 5 ? new Float32Array(n) : null;
     for (let i = 0; i < n; i++) {

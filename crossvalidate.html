@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>ATLAS-Sandbox cross-validation</title></head>
+<body>
+<script type="module">
+/**
+ * Sandbox side of the cross-validation. Runs the same fixed-parameter attacks
+ * tools/crossvalidate.py runs through ATLAS's own functions, and reports the
+ * integer outcomes for comparison.
+ *
+ * Everything random is pinned so both sides are deterministic:
+ *   injection - explicit trace index, offset and yaw; single-return sensor so
+ *               P_TWO = 0 and the occlusion resolution has nothing to draw
+ *   removal   - p_remove = 1, scan gate forced open, zero aim jitter
+ */
+import { configureSensor } from "./src/core/sensor.js";
+import { cartToSpherical, azimuthCellIndex, nearestBeamIndex } from "./src/core/polar.js";
+import { loadAtlasFrame, toPointFrame } from "./src/io/atlasframe.js";
+import { loadTraceLibrary, allTraces } from "./src/io/traces.js";
+import { placeTraceRelative } from "./src/core/atlas-inject.js";
+import { injectPhantom } from "./src/core/inject.js";
+import { ahfrRemoval } from "./src/core/atlas-removal.js";
+import { configureSpoofer } from "./src/core/spoofer.js";
+
+/** Matches ZeroRng in the Python side: every draw is the deterministic extreme. */
+const zeroRng = { random: () => 0, normal: () => 0 };
+
+/** Same hash as checksum_points(), so placements can be compared before occlusion. */
+function checksumPoints(p, quantum = 0.005) {
+  let acc = 0n;
+  for (let i = 0; i < p.x.length; i++) {
+    const qx = BigInt(Math.round(p.x[i] / quantum));
+    const qy = BigInt(Math.round(p.y[i] / quantum));
+    const qz = BigInt(Math.round(p.z[i] / quantum));
+    const h = (qx * 73856093n) ^ (qy * 19349663n) ^ (qz * 83492791n);
+    let m = h % 1000003n;
+    if (m < 0n) m += 1000003n;
+    acc = (acc + m) % (2n ** 31n);
+  }
+  return Number(acc);
+}
+
+const frameCache = new Map();
+const traceCache = new Map();
+const manifest = await (await fetch("assets/frames/manifest.json")).json();
+const bySlug = Object.fromEntries(manifest.map((m) => [m.slug, m]));
+
+async function getFrame(slug) {
+  if (!frameCache.has(slug)) {
+    const loaded = await loadAtlasFrame("assets/frames/" + bySlug[slug].file);
+    const sensor = configureSensor(loaded.header.sensor); // strongest -> pTwo = 0
+    frameCache.set(slug, { loaded, sensor, frame: toPointFrame(loaded, sensor) });
+  }
+  return frameCache.get(slug);
+}
+
+async function getTraces(dataset, difficulty) {
+  const key = dataset + "-" + difficulty;
+  if (!traceCache.has(key)) {
+    const lib = await loadTraceLibrary(`assets/traces/${key}.atlastrace`);
+    traceCache.set(key, allTraces(lib));
+  }
+  return traceCache.get(key);
+}
+
+const out = [];
+try {
+  const cfgs = JSON.parse(new URLSearchParams(location.search).get("cfg") || "[]");
+  const spoofer = configureSpoofer("cao2023");
+
+  for (const cfg of cfgs) {
+    try {
+      const { loaded, sensor, frame } = await getFrame(cfg.frame);
+
+      if (cfg.kind === "inject") {
+        const traces = await getTraces(cfg.dataset, cfg.difficulty);
+        const placed = placeTraceRelative(traces, {
+          seed: 1,
+          traceIdx: cfg.traceIdx,
+          offsetXY: cfg.offsetXY,
+          yaw: cfg.yaw,
+          dataset: cfg.dataset,
+        });
+        const res = injectPhantom({
+          frame, sensor, spoofer,
+          positionXYZ: [placed.box[0], placed.box[1], 0],
+          phantom: placed.points,
+          dataset: cfg.dataset,
+          intensityMode: "range-conditioned",
+          seed: 1,
+          groundAnchor: true,
+          atlasFaithful: true,
+        });
+        const rec = {
+          requested: res.stats.requested,
+          injected: res.stats.injected,
+          suppressed: res.stats.suppressed,
+          placedChecksum: checksumPoints(placed.points),
+        };
+        // On request, name the scene points that were destroyed. A count that is
+        // off by one says nothing about WHICH point; the index set does, and that
+        // is what localizes an occlusion disagreement to a single cell.
+        if (cfg.debugSuppressed) {
+          const idx = [];
+          for (let i = 0; i < res.keepMask.length; i++) if (!res.keepMask[i]) idx.push(i);
+          rec.suppressedIdx = idx;
+          rec.groundShiftZ = res.stats.groundShiftZ;
+          // the lattice cell each requested phantom point lands in, computed the
+          // same way injectPhantom computes it
+          const dz = res.stats.groundShiftZ;
+          const az = [], bm = [];
+          for (let i = 0; i < placed.points.x.length; i++) {
+            const s = cartToSpherical(placed.points.x[i], placed.points.y[i], placed.points.z[i] + dz);
+            az.push(azimuthCellIndex(s.az, sensor.azRes));
+            bm.push(nearestBeamIndex(s.el, sensor.inclinations));
+          }
+          rec.phantomAz = az;
+          rec.phantomBm = bm;
+        }
+        out.push(rec);
+      } else {
+        const boxes = loaded.header.boxes || [];
+        const b = boxes[cfg.targetIndex];
+        if (!b) {
+          out.push({ error: "no such target box" });
+          continue;
+        }
+        const tb = [...b.center, ...b.size, b.yaw];
+        const res = ahfrRemoval({
+          frame,
+          targetBox: tb,
+          azWidthDeg: cfg.azWidth,
+          elWidthDeg: 16,
+          pRemove: 1.0,
+          forceActive: true,
+          centerJitterStdDeg: 0,
+          rng: zeroRng,
+        });
+        out.push({
+          inSector: res.meta.nPointsInSector,
+          removed: res.meta.nPointsRemoved,
+          azCenterDeg: (res.meta.azCenterRad * 180) / Math.PI,
+          inactiveReason: res.meta.inactiveReason,
+        });
+      }
+    } catch (e) {
+      out.push({ error: String((e && e.message) || e) });
+    }
+  }
+
+  const pre = document.createElement("pre");
+  pre.id = "cv-out";
+  pre.textContent = JSON.stringify(out);
+  document.body.appendChild(pre);
+} catch (e) {
+  const pre = document.createElement("pre");
+  pre.id = "cv-error";
+  pre.textContent = (e && e.stack) || String(e);
+  document.body.appendChild(pre);
+}
+</script>
+</body>
+</html>

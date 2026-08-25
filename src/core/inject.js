@@ -54,6 +54,28 @@ function makeRng(seed) {
 }
 
 /**
+ * 5th percentile of an ASCENDING-sorted array, matching np.percentile's default
+ * "linear" method: the value at fractional position 0.05 * (n - 1), linearly
+ * interpolated between the two samples straddling it.
+ *
+ * The interpolation is not a detail. Snapping to the lower sample instead moves
+ * the ground estimate by a fraction of the gap between neighbouring z values -
+ * about 3 mm on a 5 mm-quantized cloud - which is enough to push a phantom point
+ * onto the next beam down and destroy a different real return. That was a real
+ * cross-validation disagreement against ATLAS, not a rounding nicety.
+ */
+export function percentile5(sorted) {
+  const n = sorted.length;
+  if (n === 0) return 0;
+  if (n === 1) return sorted[0];
+  const pos = 0.05 * (n - 1);
+  const lo = Math.floor(pos);
+  const frac = pos - lo;
+  if (frac === 0) return sorted[lo];
+  return sorted[lo] + frac * (sorted[lo + 1] - sorted[lo]);
+}
+
+/**
  * Vertical shift that puts the phantom's base on the local ground, using the
  * 5th percentile of scene z within `radiusM` of the phantom centroid (ATLAS's
  * ground_anchor_spoof). Returns 0 when there is too little local support.
@@ -81,7 +103,7 @@ export function groundAnchorZ({ frame, phantom, radiusM = 2.0, minSupport = 20 }
   if (local.length <= minSupport) return 0;
 
   local.sort((a, b) => a - b);
-  const groundZ = local[Math.floor(0.05 * (local.length - 1))];
+  const groundZ = percentile5(local);
 
   let minZ = Infinity;
   for (let i = 0; i < n; i++) if (phantom.z[i] < minZ) minZ = phantom.z[i];
@@ -248,7 +270,18 @@ export function injectPhantom({
       // behind it is destroyed; with dual return the nearest real echo usually
       // survives as the second return.
       const keepSecond = next() < sensor.pTwo;
-      const from = keepSecond ? start + 1 : start;
+      let from;
+      if (p.r < rNear) {
+        from = keepSecond ? start + 1 : start;
+      } else {
+        // Exact tie (r == nearest real range). ATLAS uses
+        // searchsorted(r_group, r, side="right"), which steps PAST every return
+        // equal to r - so the tied real return SURVIVES and only strictly
+        // farther ones are destroyed.
+        let k = start;
+        while (k < end && frame.r[frame.order[k]] <= p.r) k++;
+        from = keepSecond ? k + 1 : k;
+      }
       for (let i = from; i < end; i++) {
         if (keepMask[frame.order[i]]) {
           keepMask[frame.order[i]] = 0;
