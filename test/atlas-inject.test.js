@@ -206,7 +206,53 @@ describe("placeTraceRelative — port of ATLAS place_trace_relative", () => {
   it("throws on an empty library rather than injecting nothing silently", () => {
     expect(() => placeTraceRelative([], { seed: 1 })).toThrow("empty");
   });
+
+  // --- user-chosen trace and location -------------------------------------
+  // ATLAS samples these at random. Letting the user pick them keeps the
+  // TRANSFORM identical (centre, yaw, offset) and only replaces the sampled
+  // parameters, so the phantom is still built exactly the way ATLAS builds one.
+
+  it("uses an explicitly chosen trace", () => {
+    for (const k of [0, 1, 2]) {
+      expect(placeTraceRelative(libStub(), { seed: 1, traceIdx: k }).anno.traceIdx).toBe(k);
+    }
+  });
+
+  it("places the phantom at an explicitly chosen location", () => {
+    const { box, anno } = placeTraceRelative(libStub(), { seed: 1, offsetXY: [42, -7.5] });
+    expect(box[0]).toBeCloseTo(42, 1e-9);
+    expect(box[1]).toBeCloseTo(-7.5, 1e-9);
+    expect(anno.relativePositionOffset).toBeCloseToArray([42, -7.5], 1e-9);
+    expect(anno.placement).toBe("user");
+  });
+
+  it("honours a chosen location outside ATLAS's random window", () => {
+    // the window is only where ATLAS samples; the transform works anywhere
+    const { box } = placeTraceRelative(libStub(), { seed: 1, offsetXY: [-30, 12] });
+    expect(box[0]).toBeCloseTo(-30, 1e-9);
+    expect(box[1]).toBeCloseTo(12, 1e-9);
+  });
+
+  it("uses an explicitly chosen yaw", () => {
+    const { box } = placeTraceRelative(libStub(), { seed: 1, yaw: 1.0 });
+    expect(box[6]).toBeCloseTo(1.0, 1e-9);
+  });
+
+  it("still moves the points with the chosen box", () => {
+    const { points, box } = placeTraceRelative(libStub(), {
+      seed: 1, traceIdx: 0, offsetXY: [25, 4], yaw: 0.5,
+    });
+    const diag = Math.hypot(box[3], box[4]);
+    for (let i = 0; i < points.x.length; i++) {
+      expect(Math.hypot(points.x[i] - box[0], points.y[i] - box[1])).toBeLessThan(diag);
+    }
+  });
+
+  it("marks a random placement as such, so the readout can say which it was", () => {
+    expect(placeTraceRelative(libStub(), { seed: 1 }).anno.placement).toBe("atlas-random");
+  });
 });
+
 
 describe("makeAtlasRng", () => {
   it("gives uniform draws in range and is seed-reproducible", () => {

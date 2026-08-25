@@ -47,6 +47,37 @@ export function sweepRevolutions(seconds, sensor, speed = 1) {
   return seconds * sensor.hz * speed;
 }
 
+/**
+ * Time the victim's beam spends crossing a sector of total width `widthRad`.
+ * A 20 degree sector on a 10 Hz sensor is 5.6 ms.
+ */
+export function sectorDwellTime(sensor, widthRad) {
+  return (widthRad / TWO_PI) * sensor.revolutionPeriod;
+}
+
+/** Attacker pulses that land during one crossing, at its pulse repetition rate. */
+export function pulsesDuringDwell(prfHz, dwellSec) {
+  return Math.floor(Math.max(0, prfHz) * Math.max(0, dwellSec));
+}
+
+/**
+ * Victim (azimuth x beam) cells inside a sector - the number of distinct returns
+ * an attacker would have to place to fill it.
+ *
+ * Comparing this against pulsesDuringDwell is the firing budget made concrete:
+ * a 100 kHz attacker gets ~550 pulses while the beam crosses a 20 degree sector
+ * that contains several thousand cells, so it cannot address them all.
+ */
+export function victimCellsInSector(sensor, azWidthRad, elWidthRad) {
+  const nAz = Math.max(1, azWidthRad / sensor.azRes);
+  let rows = 0;
+  const half = elWidthRad / 2;
+  for (let i = 0; i < sensor.nBeams; i++) {
+    if (Math.abs(sensor.inclinations[i]) <= half) rows++;
+  }
+  return Math.round(nAz * Math.max(1, rows));
+}
+
 /** Is the victim's beam currently inside a sector of total width `widthRad`? */
 export function beamInSector(sweepAz, centerAz, widthRad) {
   let d = wrapAz(sweepAz - centerAz);

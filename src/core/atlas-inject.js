@@ -84,6 +84,12 @@ export function centerTrace(trace) {
  * Ego-relative phantom placement: pick a trace, centre it, yaw it slightly and
  * offset it in front of the ego.
  *
+ * ATLAS samples the trace, the offset and the yaw at random. `traceIdx`,
+ * `offsetXY` and `yaw` let a user choose them instead. That keeps the TRANSFORM
+ * exactly ATLAS's - de-rotate, centre, re-yaw, translate, z untouched - and only
+ * replaces where the sampled parameters come from, so the phantom is still built
+ * the way ATLAS builds one. `anno.placement` records which it was.
+ *
  * @param {Array} traces  trace objects from io/traces.js
  * @returns {{points, box, anno}}
  */
@@ -93,21 +99,29 @@ export function placeTraceRelative(traces, {
   windowMax = 0,
   rng = null,
   traceIdx = null,
+  offsetXY = null,
+  yaw = null,
 } = {}) {
   if (!traces || traces.length === 0) {
     throw new Error("cannot place a phantom from an empty trace library");
   }
   const r = rng || makeAtlasRng(seed);
 
-  // draw order matches place_trace_relative
-  const idx = traceIdx == null ? r.integers(traces.length) : traceIdx;
+  // Draw order matches place_trace_relative. The draws happen even when a value
+  // is overridden, so a given seed keeps producing the same *other* values.
+  const drawnIdx = r.integers(traces.length);
+  const drawnX = r.uniform(RELATIVE_OFFSET.xMin, RELATIVE_OFFSET.xMax);
+  const drawnY = r.uniform(-RELATIVE_OFFSET.yAbs, RELATIVE_OFFSET.yAbs);
+
+  const idx = traceIdx == null ? drawnIdx : Math.max(0, Math.min(traces.length - 1, traceIdx));
   const trace = traces[idx];
-  const offX = r.uniform(RELATIVE_OFFSET.xMin, RELATIVE_OFFSET.xMax);
-  const offY = r.uniform(-RELATIVE_OFFSET.yAbs, RELATIVE_OFFSET.yAbs);
+  const offX = offsetXY ? offsetXY[0] : drawnX;
+  const offY = offsetXY ? offsetXY[1] : drawnY;
 
   const { points: centered, box: centeredBox } = centerTrace(trace);
 
-  const yawNew = r.uniform(-RELATIVE_OFFSET.yawAbs, RELATIVE_OFFSET.yawAbs);
+  const drawnYaw = r.uniform(-RELATIVE_OFFSET.yawAbs, RELATIVE_OFFSET.yawAbs);
+  const yawNew = yaw == null ? drawnYaw : yaw;
   const c = Math.cos(yawNew);
   const s = Math.sin(yawNew);
 
@@ -141,6 +155,8 @@ export function placeTraceRelative(traces, {
       relativePositionOffset: [offX, offY],
       yaw: yawNew,
       nTracePoints: n,
+      placement: offsetXY || yaw != null || traceIdx != null ? "user" : "atlas-random",
+      traceRange: trace.range ?? null,
     },
   };
 }

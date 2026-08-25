@@ -114,6 +114,7 @@ export function renderBEV(canvas, {
   boxes = [],
   reach = null,
   atlasSector = null,
+  laser = null,
   spooferPos = null,
   targetBox = null,
   phantomBox = null,
@@ -227,6 +228,77 @@ export function renderBEV(canvas, {
   for (const b of boxes) strokeBox(ctx, v, b, rgb(PALETTE.box, 0.7), 1);
   if (targetBox) strokeBox(ctx, v, targetBox, rgb(PALETTE.target, 0.95), 2.2);
   if (phantomBox) strokeBox(ctx, v, phantomBox, rgb(PALETTE.phantom, 0.9), 1.8, [5, 3]);
+
+  // The attacker's hardware, firing at the victim's receiver.
+  //
+  // ATLAS does not model an attacker position at all - injection is a trace
+  // placed in the cloud, removal is a sector aimed at a target. To draw the
+  // hardware at all we have to choose a position, so it sits on the sector's own
+  // bearing: that is the only placement for which the laser path and the cells it
+  // affects are geometrically consistent. The attack applied to the cloud is
+  // unchanged by it.
+  //
+  // The beam is aimed at the ego's aperture, not sprayed into the scene, and it
+  // only matters while the victim's beam is pointed back at it - which is what
+  // "active" encodes.
+  if (laser) {
+    const [lx, ly] = v.px(laser.pos[0], laser.pos[1]);
+    const active = laser.active;
+
+    ctx.save();
+    // the attack path
+    ctx.strokeStyle = rgb(PALETTE.injected, active ? 0.95 : 0.22);
+    ctx.lineWidth = active ? 2.4 : 1;
+    if (!active) ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(lx, ly);
+    ctx.lineTo(v.cx, v.cy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (active) {
+      // pulses in flight toward the receiver. The real train is at tens of kHz,
+      // far faster than a display frame, so these are indicative of firing, not
+      // individual pulses to be counted.
+      const nPulses = 5;
+      const phase = laser.phase ?? 0;
+      for (let i = 0; i < nPulses; i++) {
+        const t = ((i / nPulses + phase) % 1);
+        const px = lx + (v.cx - lx) * t;
+        const py = ly + (v.cy - ly) * t;
+        ctx.fillStyle = rgb(PALETTE.injected, 0.9 * (1 - Math.abs(0.5 - t) * 0.8));
+        ctx.beginPath();
+        ctx.arc(px, py, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // the receiver being illuminated
+      const glow = ctx.createRadialGradient(v.cx, v.cy, 0, v.cx, v.cy, 22);
+      glow.addColorStop(0, rgb(PALETTE.injected, 0.5));
+      glow.addColorStop(1, rgb(PALETTE.injected, 0));
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(v.cx, v.cy, 22, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // the hardware itself
+    ctx.fillStyle = rgb(PALETTE.injected, active ? 1 : 0.55);
+    ctx.beginPath();
+    ctx.arc(lx, ly, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = rgb(PALETTE.injected, active ? 1 : 0.5);
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(lx, ly, active ? 12 : 9.5, 0, Math.PI * 2);
+    ctx.stroke();
+    if (active) {
+      ctx.beginPath();
+      ctx.arc(lx, ly, 17, 0, Math.PI * 2);
+      ctx.strokeStyle = rgb(PALETTE.injected, 0.35);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   // the rotating beam
   if (sweep) {

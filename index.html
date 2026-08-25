@@ -77,6 +77,17 @@
   .stat .v{font-family:var(--mono);font-size:18px;font-weight:600}
   .stat .v small{font-size:11px;color:var(--dim);font-weight:400}
   .stat.warn2 .v{color:var(--warn)} .stat.good .v{color:var(--ok)} .stat.bad .v{color:var(--err)}
+  details.adv{border-top:1px solid var(--line-2);margin-top:14px;padding-top:4px}
+  details.adv summary{cursor:pointer;font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);padding:10px 0;list-style:none}
+  details.adv summary::-webkit-details-marker{display:none}
+  details.adv summary::before{content:"▸  ";color:var(--accent-d)}
+  details.adv[open] summary::before{content:"▾  "}
+  .row{display:flex;gap:5px;align-items:center;margin-bottom:9px}
+  .row button{flex:0 0 auto;background:#fff;border:1px solid var(--line);border-radius:7px;padding:6px 10px;font-family:var(--mono);font-size:12px;cursor:pointer}
+  .row button:hover{border-color:var(--faint);background:var(--inset)}
+  .row .grow{flex:1}
+  .laser{font-family:var(--mono);font-size:11.5px;background:var(--inset);border:1px solid var(--line-2);border-radius:7px;padding:8px 10px;margin-bottom:9px;color:var(--dim);line-height:1.5}
+  .laser b{color:var(--injected)}
   figcaption{max-width:920px;margin:20px 0 0;font-family:var(--serif);font-style:italic;font-size:14.5px;line-height:1.6;color:var(--dim)}
   figcaption b{font-style:normal;font-family:var(--sans);color:var(--ink)}
 </style>
@@ -93,20 +104,9 @@
   <figure class="board" style="margin:34px 0 0">
     <aside>
       <div class="group">
-        <p class="glabel">Recorded frame</p>
-        <label class="field"><div class="cap"><span>Scene</span><span class="val" id="sceneSpec"></span></div>
+        <p class="glabel">Scene</p>
+        <label class="field"><div class="cap"><span>Recorded frame</span><span class="val" id="sceneSpec"></span></div>
           <select id="scene"></select></label>
-        <label class="field"><div class="cap"><span>Or upload</span></div>
-          <input type="file" id="upload" accept=".bin,.atlasframe,.pcd"></label>
-        <p class="note">Raw KITTI <span class="k">.bin</span> and nuScenes <span class="k">.pcd.bin</span> are read directly.</p>
-      </div>
-
-      <div class="group">
-        <p class="glabel">Victim sensor</p>
-        <label class="field"><div class="cap"><span>Model</span><span class="val" id="sensorSpec"></span></div>
-          <select id="sensor"></select></label>
-        <label class="field"><div class="cap"><span>Spin rate</span><span class="val" id="hzVal"></span></div>
-          <input type="range" id="hz" min="5" max="20" step="1" value="10"></label>
       </div>
 
       <div class="group">
@@ -123,29 +123,33 @@
               <button id="dMedium" aria-pressed="false">Medium</button>
               <button id="dHard" aria-pressed="false">Hard</button>
             </div></label>
-          <p class="note">Difficulty is phantom point density: ATLAS samples a real recorded vehicle from <span class="k">trace_{easy,medium,hard}</span>.</p>
-          <button class="btn" id="reroll">Re-roll phantom (new seed)</button>
-          <label class="field"><div class="cap"><span>Intensity model</span></div>
-            <select id="intensityMode">
-              <option value="range-conditioned">Range-conditioned (ATLAS)</option>
-              <option value="saturated">Saturated (real spoofer)</option>
-              <option value="constant">Constant</option>
-            </select></label>
-          <label class="chk"><input type="checkbox" id="groundAnchor" checked>
-            <span>Ground-anchor the phantom</span></label>
+          <label class="field"><div class="cap"><span>Which vehicle</span><span class="val" id="traceSpec"></span></div>
+            <input type="range" id="traceIdx" min="0" max="199" step="1" value="0"></label>
+          <div class="row">
+            <button id="tracePrev">&lsaquo;</button>
+            <button id="traceNext">&rsaquo;</button>
+            <button id="reroll" class="grow">Randomize as ATLAS does</button>
+          </div>
+          <p class="note">Click the left view to place the phantom.</p>
         </div>
 
         <div id="removeOpts" style="display:none">
           <div class="target" id="targetInfo">No target selected</div>
-          <button class="btn" id="autoTarget">Auto-select target (ATLAS)</button>
-          <p class="note">Or click a vehicle in the left view to aim at it.</p>
+          <div class="row">
+            <button id="autoTarget" class="grow">Let ATLAS pick the target</button>
+          </div>
+          <p class="note">Or click a vehicle in the left view.</p>
           <label class="field"><div class="cap"><span>Sector width <span class="k">az_width</span></span><span class="val" id="azwVal"></span></div>
             <input type="range" id="azWidth" min="4" max="60" step="1" value="20"></label>
-          <label class="field"><div class="cap"><span><span class="k">p_remove</span></span><span class="val" id="prVal"></span></div>
-            <input type="range" id="pRemove" min="0" max="1" step="0.01" value="0.96"></label>
-          <label class="chk"><input type="checkbox" id="forceActive">
-            <span>Force the scan gate active <span class="note" style="display:inline">(skip the frame draw)</span></span></label>
         </div>
+      </div>
+
+      <div class="group">
+        <p class="glabel">Attacker hardware</p>
+        <div class="laser" id="laserInfo">—</div>
+        <label class="field"><div class="cap"><span>Standoff</span><span class="val" id="standoffVal"></span></div>
+          <input type="range" id="standoff" min="4" max="60" step="1" value="18"></label>
+        <p class="note">Where the attacker stands is a visualization choice — ATLAS does not model it, and it does not change the attack unless the physics overlay is on.</p>
       </div>
 
       <div class="group">
@@ -158,25 +162,43 @@
           <input type="range" id="speed" min="-2" max="0.3" step="0.05" value="-0.9"></label>
       </div>
 
-      <div class="group">
-        <p class="glabel">Physical feasibility overlay</p>
-        <label class="chk"><input type="checkbox" id="overlay">
-          <span>Gate the attack by physics <span class="note" style="display:inline">(NOT part of ATLAS)</span></span></label>
-        <p class="note">Adds the v1 model: power-derived envelope, line of sight, time-of-flight floor, synchronization. ATLAS assumes a synchronized attacker and applies none of these, so leave it off to see what ATLAS generates.</p>
-        <label class="field" id="spooferRow" style="display:none"><div class="cap"><span>Spoofer hardware</span></div>
-          <select id="spooferPreset"></select></label>
-      </div>
+      <details class="adv">
+        <summary>Advanced</summary>
 
-      <div class="group">
-        <p class="glabel">View</p>
-        <label class="field"><div class="cap"><span>Range</span><span class="val" id="rangeVal"></span></div>
+        <label class="field"><div class="cap"><span>Upload a frame</span></div>
+          <input type="file" id="upload" accept=".bin,.atlasframe,.pcd"></label>
+        <label class="field"><div class="cap"><span>Sensor</span><span class="val" id="sensorSpec"></span></div>
+          <select id="sensor"></select></label>
+        <label class="field"><div class="cap"><span>Spin rate</span><span class="val" id="hzVal"></span></div>
+          <input type="range" id="hz" min="5" max="20" step="1" value="10"></label>
+
+        <label class="field"><div class="cap"><span>Phantom intensity</span></div>
+          <select id="intensityMode">
+            <option value="range-conditioned">Range-conditioned (ATLAS)</option>
+            <option value="saturated">Saturated (real spoofer)</option>
+            <option value="constant">Constant</option>
+          </select></label>
+        <label class="chk"><input type="checkbox" id="groundAnchor" checked>
+          <span>Ground-anchor the phantom</span></label>
+
+        <label class="field"><div class="cap"><span><span class="k">p_remove</span></span><span class="val" id="prVal"></span></div>
+          <input type="range" id="pRemove" min="0" max="1" step="0.01" value="0.96"></label>
+        <label class="chk"><input type="checkbox" id="forceActive">
+          <span>Force the scan gate active</span></label>
+
+        <label class="chk"><input type="checkbox" id="overlay">
+          <span>Physics overlay <span class="note" style="display:inline">(not ATLAS)</span></span></label>
+        <label class="field" id="spooferRow" style="display:none"><div class="cap"><span>Spoofer preset</span></div>
+          <select id="spooferPreset"></select></label>
+
+        <label class="field"><div class="cap"><span>View range</span><span class="val" id="rangeVal"></span></div>
           <input type="range" id="viewRange" min="20" max="120" step="5" value="70"></label>
         <label class="chk"><input type="checkbox" id="showRemoved" checked>
           <span>Mark destroyed returns</span></label>
         <label class="chk"><input type="checkbox" id="showBoxes" checked>
           <span>Ground-truth boxes</span></label>
         <button class="btn" id="exportBtn">Download attack bundle</button>
-      </div>
+      </details>
     </aside>
 
     <main>
@@ -201,7 +223,8 @@
         <span><i style="background:var(--injected)"></i>phantom (injected)</span>
         <span><i style="background:var(--removed)"></i>destroyed</span>
         <span><i style="background:rgba(147,51,234,.35)"></i>A-HFR sector</span>
-        <span><i style="background:var(--accent)"></i>beam</span>
+        <span><i style="background:var(--accent)"></i>victim beam</span>
+        <span><i style="background:var(--injected)"></i>attacker laser (firing)</span>
       </div>
 
       <div id="status" class="status">Loading…</div>

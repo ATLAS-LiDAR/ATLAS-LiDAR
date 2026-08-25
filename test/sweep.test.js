@@ -4,6 +4,9 @@ import { configureSensor } from "../src/core/sensor.js";
 import { PointFrame } from "../src/core/frame.js";
 import { frameOf, atCell, emptyFrame } from "./fixtures.js";
 import {
+  sectorDwellTime,
+  pulsesDuringDwell,
+  victimCellsInSector,
   sweptPointCount,
   advanceSweep,
   sweepAzToCell,
@@ -160,5 +163,43 @@ describe("beamInSector", () => {
       if (beamInSector((i / N) * 2 * Math.PI, 0, widthRad)) inside++;
     }
     expect(inside / N).toBeCloseTo(widthRad / (2 * Math.PI), 0.01);
+  });
+});
+
+describe("attacker firing vs the victim's scan", () => {
+  it("computes how long the beam spends crossing a sector", () => {
+    // a 20 deg sector at 10 Hz: (20/360) * 100 ms = 5.56 ms
+    const dwell = sectorDwellTime(sensor, (20 * Math.PI) / 180);
+    expect(dwell).toBeCloseTo((20 / 360) * (1 / sensor.hz), 1e-9);
+    expect(dwell * 1000).toBeCloseTo(5.56, 0.05);
+  });
+
+  it("scales dwell with sector width and inversely with spin rate", () => {
+    const wide = sectorDwellTime(sensor, (40 * Math.PI) / 180);
+    const narrow = sectorDwellTime(sensor, (20 * Math.PI) / 180);
+    expect(wide).toBeCloseTo(narrow * 2, 1e-9);
+    const fast = sectorDwellTime(configureSensor("hdl64e", { hz: 20 }), (20 * Math.PI) / 180);
+    expect(fast).toBeCloseTo(narrow / 2, 1e-9);
+  });
+
+  it("counts the attacker pulses that land during one crossing", () => {
+    const dwell = sectorDwellTime(sensor, (20 * Math.PI) / 180);
+    expect(pulsesDuringDwell(100000, dwell)).toBe(Math.floor(100000 * dwell));
+    expect(pulsesDuringDwell(0, dwell)).toBe(0);
+  });
+
+  it("counts the victim cells inside the sector for comparison", () => {
+    // The interesting comparison: the attacker gets far fewer pulses than there
+    // are cells to fill, which is the firing-budget constraint made concrete.
+    const cells = victimCellsInSector(sensor, (20 * Math.PI) / 180, (16 * Math.PI) / 180);
+    expect(cells).toBeGreaterThan(1000);
+    const dwell = sectorDwellTime(sensor, (20 * Math.PI) / 180);
+    expect(pulsesDuringDwell(100000, dwell)).toBeLessThan(cells);
+  });
+
+  it("counts only the beams the sector actually spans vertically", () => {
+    const narrowEl = victimCellsInSector(sensor, (20 * Math.PI) / 180, (2 * Math.PI) / 180);
+    const wideEl = victimCellsInSector(sensor, (20 * Math.PI) / 180, (30 * Math.PI) / 180);
+    expect(wideEl).toBeGreaterThan(narrowEl);
   });
 });

@@ -25,7 +25,8 @@ import { loadAtlasFrame, loadManifest, parseAtlasFrame, parseRawLidar, toPointFr
 import { composeCloud } from "../core/compose.js";
 import { buildAttackBundle, downloadBundle, bundleFilename } from "../io/export.js";
 import { pickBoxAt, normalizeBox } from "../core/iou.js";
-import { sweptPointCount, advanceSweep, sweepAzToCell, beamInSector } from "../core/sweep.js";
+import { sweptPointCount, advanceSweep, sweepAzToCell, beamInSector,
+         sectorDwellTime, pulsesDuringDwell, victimCellsInSector } from "../core/sweep.js";
 import { renderBEV, renderRangeImage, makeView } from "./render.js";
 
 const DEG = Math.PI / 180;
@@ -55,6 +56,10 @@ const S = {
   intensityMode: "range-conditioned",
   groundAnchor: true,
   targetIndex: -1,
+  traceIdx: null,      // null = let ATLAS sample it
+  phantomAt: null,     // null = let ATLAS sample the offset
+  standoff: 18,
+  laserPhase: 0,
   azWidthDeg: AHFR_DEFAULTS.azWidthDeg,
   pRemove: AHFR_DEFAULTS.pRemove,
   forceActive: false,
@@ -189,7 +194,11 @@ async function recompute() {
 
   if (S.attack === "inject") {
     const { traces } = await traceLib();
-    const placed = placeTraceRelative(traces, { seed: S.seed });
+    const placed = placeTraceRelative(traces, {
+      seed: S.seed,
+      traceIdx: S.traceIdx,
+      offsetXY: S.phantomAt,
+    });
     phantomBox = { center: placed.box.slice(0, 3), size: placed.box.slice(3, 6), yaw: placed.box[6] };
     result = injectPhantom({
       frame,
@@ -210,6 +219,21 @@ async function recompute() {
     result.placed = placed;
     centerAz = Math.atan2(placed.box[1], placed.box[0]);
     if (centerAz < 0) centerAz += 2 * Math.PI;
+
+    // The attack window for an injection is the azimuth span the phantom's own
+    // points occupy - that is the set of victim rays the attacker has to hit.
+    let spanMin = 0;
+    let spanMax = 0;
+    for (let i = 0; i < spoof.az.length; i++) {
+      let d = spoof.az[i] - centerAz;
+      if (d > Math.PI) d -= 2 * Math.PI;
+      if (d < -Math.PI) d += 2 * Math.PI;
+      spanMin = Math.min(spanMin, d);
+      spanMax = Math.max(spanMax, d);
+    }
+    const spanRad = Math.max(spanMax - spanMin, sn.azRes);
+    atlasSector = { azCenter: centerAz, azWidthDeg: (spanRad * 180) / Math.PI };
+    result.elWidthDeg = 16;
   } else {
     const tb = targetBox();
     if (!tb) {
@@ -240,7 +264,15 @@ async function recompute() {
     }
   }
 
-  S.last = { sensor: sn, spoofer: sp, reach, keepMask, spoof, result, phantomBox, atlasSector, secMask, centerAz, ms: performance.now() - t0 };
+  // The attacker sits on the sector's own bearing: the only placement for which
+  // the laser path and the affected cells are geometrically consistent. ATLAS
+  // does not model a position, so this is a visualization choice only.
+  const laserPos = [Math.cos(centerAz) * S.standoff, Math.sin(centerAz) * S.standoff];
+  S.last = {
+    sensor: sn, spoofer: sp, reach, keepMask, spoof, result,
+    phantomBox, atlasSector, secMask, centerAz, laserPos,
+    ms: performance.now() - t0,
+  };
   draw();
   report();
 }
@@ -264,6 +296,10 @@ function draw() {
     ? beamInSector(S.sweepAz, atlasSector.azCenter, atlasSector.azWidthDeg * DEG)
     : false;
 
+  const laser = S.last.laserPos && atlasSector
+    ? { pos: S.last.laserPos, active: S.spinning ? sectorActive : true, phase: S.laserPhase }
+    : null;
+
   const boxes = S.showBoxes ? S.loaded.header.boxes || [] : [];
   const tb = targetBox();
   const targetView = tb && S.attack === "remove"
@@ -278,10 +314,12 @@ function draw() {
     spoof,
     atlasSector,
     sectorActive,
+    laser,
     targetBox: targetView,
     phantomBox,
     showRemoved: S.showRemoved,
   });
+  updateLaserInfo();
   renderRangeImage($("cvLattice"), {
     frame,
     sensor: sn,
@@ -292,6 +330,31 @@ function draw() {
     sectorMask: secMask,
     sweep,
   });
+}
+
+/** The attacker's firing rate against the victim's scan, in plain numbers. */
+function updateLaserInfo() {
+  const el = $("laserInfo");
+  if (!S.last || !S.last.atlasSector) {
+    el.innerHTML = "—";
+    return;
+  }
+  const sn = S.last.sensor;
+  const sec = S.last.atlasSector;
+  const widthRad = sec.azWidthDeg * DEG;
+  const elWidthRad = (S.attack === "remove" ? S.last.result?.meta?.elWidthDeg ?? 16 : 16) * DEG;
+  const dwell = sectorDwellTime(sn, widthRad);
+  const prf = S.last.spoofer.prfHz;
+  const pulses = pulsesDuringDwell(prf, dwell);
+  const cells = victimCellsInSector(sn, widthRad, elWidthRad);
+  const firing = S.spinning
+    ? beamInSector(S.sweepAz, sec.azCenter, widthRad)
+    : true;
+  el.innerHTML =
+    `${firing ? "<b>FIRING</b>" : "idle"} · aims ${((sec.azCenter * 180) / Math.PI).toFixed(0)}° ` +
+    `at ${S.standoff} m<br>beam crosses its ${sec.azWidthDeg.toFixed(1)}° window in ` +
+    `${(dwell * 1000).toFixed(2)} ms<br>${pulses.toLocaleString()} pulses @ ${(prf / 1000).toFixed(0)} kHz ` +
+    `vs ${cells.toLocaleString()} victim cells`;
 }
 
 function stat(k, v, cls = "") {
@@ -376,6 +439,7 @@ function loop(t) {
   lastT = t;
   if (S.spinning && S.frame && S.last) {
     S.sweepAz = advanceSweep(S.sweepAz, dt, S.last.sensor, S.speed);
+    S.laserPhase = (S.laserPhase + dt * 3) % 1;
     draw();
   }
   requestAnimationFrame(loop);
@@ -391,6 +455,18 @@ function labels() {
   $("prVal").textContent = S.pRemove.toFixed(2);
   $("speedVal").textContent = S.speed.toFixed(2) + "×";
   $("rangeVal").textContent = S.viewRange + " m";
+  $("standoffVal").textContent = S.standoff + " m";
+  const lib = S.traceLibs.get(
+    (S.loaded?.header.dataset === "kitti" ? "kitti" : "nuscenes") + "-" + S.difficulty
+  );
+  if (lib) {
+    $("traceIdx").max = String(lib.lib.header.nTraces - 1);
+    const shown = S.traceIdx == null ? S.last?.result?.placed?.anno?.traceIdx : S.traceIdx;
+    if (shown != null) $("traceIdx").value = String(shown);
+    $("traceSpec").textContent =
+      (S.traceIdx == null ? "random #" : "#") + (shown ?? 0) +
+      (lib.lib.header.counts[shown ?? 0] != null ? ` · ${lib.lib.header.counts[shown ?? 0]} pts` : "");
+  }
   const e = S.manifest.find((m) => m.slug === S.sceneSlug);
   $("sceneSpec").textContent = e ? `${(e.nPoints / 1000).toFixed(0)}k pts` : "";
   const tm = S.traceManifest.find(
@@ -485,7 +561,29 @@ export async function boot() {
     $("spooferRow").style.display = S.overlay ? "" : "none";
     recompute();
   };
-  $("reroll").onclick = () => { S.seed = (S.seed * 1103515245 + 12345) & 0x7fffffff; recompute(); };
+  $("reroll").onclick = () => {
+    // back to ATLAS's own sampling for trace, offset and yaw
+    S.seed = (S.seed * 1103515245 + 12345) & 0x7fffffff;
+    S.traceIdx = null;
+    S.phantomAt = null;
+    recompute();
+  };
+  $("traceIdx").oninput = (e) => {
+    S.traceIdx = parseInt(e.target.value, 10);
+    labels();
+    recompute();
+  };
+  const stepTrace = (d) => {
+    const lib = S.traceLibs.get((S.loaded?.header.dataset === "kitti" ? "kitti" : "nuscenes") + "-" + S.difficulty);
+    const n = lib ? lib.lib.header.nTraces : 200;
+    const cur = S.traceIdx == null ? S.last?.result?.placed?.anno?.traceIdx ?? 0 : S.traceIdx;
+    S.traceIdx = (cur + d + n) % n;
+    labels();
+    recompute();
+  };
+  $("tracePrev").onclick = () => stepTrace(-1);
+  $("traceNext").onclick = () => stepTrace(1);
+  bind("standoff", (v) => { S.standoff = v; });
   $("autoTarget").onclick = () => { autoTarget(true); recompute(); };
 
   // click: hit a vehicle -> aim at it; otherwise move the spoofer
@@ -496,17 +594,17 @@ export async function boot() {
     const sy = ((ev.clientY - r.top) * cv.height) / r.height;
     const [wx, wy] = makeView(cv, S.viewRange).inv(sx, sy);
     const boxes = (S.loaded.header.boxes || []).map(normalizeBox);
-    const hit = pickBoxAt(wx, wy, boxes);
-    if (hit >= 0) {
-      S.targetIndex = hit;
-      updateTargetInfo();
-      if (S.attack !== "remove") {
-        S.attack = "remove";
-        $("atkRemove").click();
-        return;
+    if (S.attack === "inject") {
+      // place the phantom where you clicked
+      S.phantomAt = [wx, wy];
+    } else {
+      const hit = pickBoxAt(wx, wy, boxes);
+      if (hit >= 0) {
+        S.targetIndex = hit;
+        updateTargetInfo();
+      } else if (S.overlay) {
+        S.spooferPos = [wx, wy, S.spooferPos[2]];
       }
-    } else if (S.overlay) {
-      S.spooferPos = [wx, wy, S.spooferPos[2]];
     }
     recompute();
   };
