@@ -328,3 +328,88 @@ describe("injectPhantom output", () => {
     expect(total).toBe(res.stats.requested);
   });
 });
+
+describe("injectPhantom in ATLAS-faithful mode", () => {
+  // ATLAS's spoof_frame applies NO reachability, timing or power model, and it
+  // evaluates each phantom point independently with no per-cell dedupe. Faithful
+  // mode must reproduce that, including the consequences.
+  const atlas = (opts) => inject({ atlasFaithful: true, ...opts });
+
+  it("injects outside the spoofer envelope, because ATLAS has no envelope", () => {
+    const far = Math.round(Math.PI / 2 / sensor.azRes);
+    const res = atlas({
+      frame: emptyFrame(sensor),
+      phantom: phantomAt([[far, CENTRE_ROW, 60]]),
+    });
+    expect(res.stats.injected).toBe(1);
+    expect(res.stats.rejected.unreachable).toBe(0);
+  });
+
+  it("injects inside the relay floor, because ATLAS has no timing model", () => {
+    const res = atlas({
+      frame: emptyFrame(sensor),
+      spoofer: configureSpoofer("cao2023", { canPredict: false }),
+      phantom: phantomAt([[0, CENTRE_ROW, 10]]),
+    });
+    expect(res.stats.injected).toBe(1);
+    expect(res.stats.rejected.tof).toBe(0);
+  });
+
+  it("keeps every phantom point in a shared cell, with no dedupe", () => {
+    const res = atlas({
+      frame: emptyFrame(sensor),
+      phantom: phantomAt([
+        [0, CENTRE_ROW, 60],
+        [0, CENTRE_ROW, 62],
+        [0, CENTRE_ROW, 64],
+      ]),
+    });
+    expect(res.stats.injected).toBe(3);
+    expect(res.stats.rejected.cellConflict).toBe(0);
+    // and the consequence: more than one return per cell, which is what
+    // realizability.py is for
+    expect(res.stats.fill).toBeGreaterThan(1.0);
+  });
+
+  it("still resolves occlusion exactly as spoof_frame does", () => {
+    const frame = frameOf(sensor, [atCell(sensor, 0, CENTRE_ROW, 50)]);
+    const res = atlas({ frame, phantom: phantomAt([[0, CENTRE_ROW, 60]]) });
+    expect(res.stats.injected).toBe(0);
+    expect(res.stats.rejected.occluded).toBe(1);
+    expect(res.keepMask[0]).toBe(1);
+  });
+
+  it("still suppresses real returns behind a phantom that lands in front", () => {
+    const frame = frameOf(sensor, [atCell(sensor, 0, CENTRE_ROW, 80)]);
+    const res = atlas({ frame, phantom: phantomAt([[0, CENTRE_ROW, 60]]) });
+    expect(res.stats.injected).toBe(1);
+    expect(res.stats.suppressed).toBe(1);
+  });
+
+  it("keeps a phantom in a cell the victim never sampled", () => {
+    // key not in key_to_slice -> `continue`, i.e. the phantom survives
+    const res = atlas({
+      frame: frameOf(sensor, [atCell(sensor, 500, 10, 30)]),
+      phantom: phantomAt([[0, CENTRE_ROW, 60]]),
+    });
+    expect(res.stats.injected).toBe(1);
+  });
+
+  it("differs from physics mode on the same input", () => {
+    const phantom = phantomAt([[0, CENTRE_ROW, 60], [0, CENTRE_ROW, 62]]);
+    const physics = inject({ frame: emptyFrame(sensor), phantom });
+    const faithful = atlas({ frame: emptyFrame(sensor), phantom });
+    expect(faithful.stats.injected).toBeGreaterThan(physics.stats.injected);
+  });
+
+  it("still reconciles its accounting", () => {
+    const res = atlas({
+      frame: emptyFrame(sensor),
+      phantom: phantomAt([[0, CENTRE_ROW, 60], [0, CENTRE_ROW, 62]]),
+    });
+    const r = res.stats.rejected;
+    const total = res.stats.injected + r.unreachable + r.response + r.tof + r.mot +
+      r.sync + r.cellConflict + r.occluded;
+    expect(total).toBe(res.stats.requested);
+  });
+});

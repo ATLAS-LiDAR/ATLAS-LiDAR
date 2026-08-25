@@ -1,5 +1,7 @@
 import { describe, it, expect } from "./harness.js";
 import {
+  pointInBoxBEV,
+  pickBoxAt,
   normalizeBox,
   bevCorners,
   polygonArea,
@@ -158,5 +160,34 @@ describe("maxIoU", () => {
     const r = maxIoU([], normalizeBox(box(10, 0, 0, 4, 2, 1.6)));
     expect(r.iou).toBe(0);
     expect(r.index).toBe(-1);
+  });
+});
+
+describe("pointInBoxBEV and pickBoxAt", () => {
+  it("detects a point inside an axis-aligned footprint", () => {
+    const b = box(10, 0, 0, 4, 2, 1.6);
+    expect(pointInBoxBEV(10, 0, b)).toBeTruthy();
+    expect(pointInBoxBEV(11.9, 0.9, b)).toBeTruthy();
+    expect(pointInBoxBEV(12.1, 0, b)).toBeFalsy();
+    expect(pointInBoxBEV(10, 1.1, b)).toBeFalsy();
+  });
+
+  it("respects yaw", () => {
+    const b = box(0, 0, 0, 8, 1, 1.6, Math.PI / 2);
+    // long axis now runs along y
+    expect(pointInBoxBEV(0, 3.5, b)).toBeTruthy();
+    expect(pointInBoxBEV(3.5, 0, b)).toBeFalsy();
+  });
+
+  it("picks the smallest containing box, so small objects stay selectable", () => {
+    const bus = box(20, 0, 0, 12, 3, 3.2);
+    const ped = box(20, 0, 0, 0.8, 0.8, 1.8);
+    expect(pickBoxAt(20, 0, [bus, ped])).toBe(1);
+    expect(pickBoxAt(25, 0, [bus, ped])).toBe(0);
+  });
+
+  it("returns -1 when nothing is hit", () => {
+    expect(pickBoxAt(99, 99, [box(0, 0, 0, 4, 2, 1.6)])).toBe(-1);
+    expect(pickBoxAt(0, 0, [])).toBe(-1);
   });
 });

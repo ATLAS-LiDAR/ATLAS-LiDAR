@@ -1,66 +1,94 @@
-# ATLAS-Sandbox v1 — a visualization of the ATLAS attack
+# ATLAS-Sandbox
 
-**v1 scope.** This is an interactive *visualization* of the ATLAS LiDAR spoofing
-attack, running on real recorded driving frames. It is a finished artifact, not a
-staging ground: attack-success evaluation (a downstream detector), temporal
-multi-frame attacks and 3D/multi-ring views are deliberately out of scope and
-belong to a later version.
+An interactive visualizer for the ATLAS LiDAR spoofing attack, running on real
+recorded driving frames.
 
-The ATLAS attack in `Polar-Hierarchical-Mamba` is an offline data-generation
-pipeline — it perturbs recorded frames and hands the result to a detector. What
-the perturbation actually *is* never surfaces: which returns die, which cells a
-phantom can occupy, why a given point survives. This shows that, return by
-return, on the sensor's own scan lattice.
+## Versions
 
-## What is ATLAS here, and what is not
+| | | |
+|---|---|---|
+| **v1** | tag `v1` | Barebones demo. The scan-lattice model, spoofer hardware physics and realizability verdict, on recorded frames. Frozen and citable. |
+| **v2** | `main` | **The ATLAS visualizer.** ATLAS's own algorithms, ported: trace-based injection and A-HFR removal, with the sensor spinning in real time. This is where the project is now. |
+| **v3** | planned | The true ATLAS-Sandbox: visualize *any* raw-signal spoofing attack, not just ATLAS. |
 
-Being precise about this matters for what the figure can be claimed to show.
-
-**Visualized from ATLAS** — the perturbation model, ported and cross-checked:
-
-| here | from |
-|---|---|
-| occlusion-aware injection: per-cell range comparison, first-return suppression, dual-return `pTwo` | `nuscenes_atlas_common.spoof_frame` |
-| ground anchoring to the 5th percentile of local scene z within 2 m | `ground_anchor_spoof` |
-| range-conditioned lognormal intensity, clipped to measured percentiles | `get_stats_for_range` + the `.npy` band statistics |
-| beam inclinations, azimuth resolution, intensity bands | the same `atlas_generation/*.npy` assets, emitted by `tools/gen_sensor_assets.py` with source SHAs |
-| cell fill and firing-budget metrics | `osf_k6nf2/realizability.py` |
-
-**Added here, because ATLAS does not model it.**
-`ATLAS_REAL_WORLD_VALIDATION.md` closes with exactly this list: *"laser
-wavelength, analog receiver electronics, attacker-victim timing synchronization.
-ATLAS assumes a synchronized attacker and simulates the resulting point-cloud
-perturbation."*
-
-- **Time of flight and the relay floor.** A reactive spoofer *d* metres away
-  cannot place a phantom closer than *d*; getting inside that needs pulse
-  prediction, which is an explicit capability toggle instead of an assumption.
-- **Synchronization as a parameter**, at gate-width / firing-period — about 2% for
-  a free-running spoofer against a VLP-16.
-- **A derived reachable envelope** from power over threshold, divergence and
-  standoff, where ATLAS uses fixed `az10`–`az60` widths.
-- **Line of sight** from spoofer to victim through the recorded geometry.
-- **Removal as a mechanism** — a saturated sub-MOT echo the firmware discards —
-  where ATLAS applies a `p_remove` probability.
-- **The PRF firing budget**, capping points per revolution.
-
-The short version: **what the attack does to the cloud is ATLAS; whether the
-attack is physically possible is new.** That second layer is what lets the figure
-label an attack impossible, demonstrated, or an extrapolation, and say why.
+v2's spec is **fidelity**. Every attack it shows is a port of ATLAS's own code, so
+what you see is what the pipeline generates - not an approximation that looks
+similar. Where ATLAS does something surprising, the port keeps the surprise and
+documents it rather than quietly tidying it up.
 
 ## Running it
 
-No build step and no Node required — native ES modules over any static server:
+No build step and no Node required - native ES modules over any static server:
 
 ```sh
 python3 -m http.server 8080
 # open http://127.0.0.1:8080/index.html
 ```
 
+A configuration is shareable, and headless-drivable, through the URL:
+
+```
+index.html?mode=remove&scene=kitti-parked-row&azWidth=40&forceActive=1
+index.html?mode=inject&difficulty=hard&spin=0
+```
+
+## What v2 shows
+
+**Injection** samples a *real recorded vehicle* from `trace_{easy,medium,hard}`,
+which is what those split names mean - phantom point density, measured at median
+186 / 26 / 7 points on the nuScenes libraries. The trace is de-rotated and
+centred (`center_trace`), yawed by `uniform(-0.2, 0.2)`, offset `uniform(15,20)` m
+ahead and `uniform(-3,3)` m lateral (`place_trace_relative`), anchored to the
+local ground, given range-conditioned intensity, and resolved against the real
+cloud per (azimuth x beam) cell (`spoof_frame`): a phantom behind a real surface
+is dropped, a phantom in front destroys what was behind it.
+
+**Removal** aims a roadside A-HFR spoofer at a vehicle you pick - click it, or let
+ATLAS choose with `select_initial_target`. The aim is rate-limited like a servo
+(15 deg/frame), elevation is held fixed, and a frame-level scan gate fires with a
+probability that is a *measured, non-monotonic* function of target range. Inside a
+hard 20 deg x 16 deg sector every return dies with probability `p_remove` = 0.96.
+`az_width` is the slider that names the `removal_azNN` splits.
+
+**The sweep** reveals points in the order the sensor actually acquired them. A
+recorded cloud has already been sampled, so there is nothing left to raycast -
+but the scan lattice was recovered, so the animation walks a prefix of the
+azimuth-sorted index, which is an O(1) lookup per rendered frame.
+
+## Fidelity notes
+
+Things ATLAS does that a tidier implementation would get wrong, kept and
+documented in the ports:
+
+- `ahfr_gate_prob` is **not monotonic** in distance (0.66 at 10-20 m, 0.46 at
+  20-30 m) because the bands are measurement averages; its `<= upper and >= lower`
+  chain resolves an exact boundary to the **lower** band.
+- `select_initial_target` picks, within the tolerance band,
+  `argmax(|dist - desired_range|)` - the candidate **furthest** from the desired
+  range. That reads like an intended `argmin`, but changing it would change which
+  vehicle every removal split targets, so it is ported as-is with an opt-in flag
+  for the other reading.
+- `center_trace` transforms **xy only**; z keeps the height at which the object
+  was originally observed and is corrected later by ground anchoring. Recentring z
+  would double-correct and sink the phantom.
+- `spoof_frame` evaluates each phantom point **independently, with no per-cell
+  dedupe**, so an ATLAS phantom can carry more than one return per (az, beam)
+  cell. The sandbox reports it (a typical easy-trace phantom lands around 2.4
+  returns/cell) rather than silently fixing it - that is precisely the question
+  `osf_k6nf2/realizability.py` was written to ask.
+
+## The physics overlay is not ATLAS
+
+v1's model - power-derived reachable envelope, line of sight, time-of-flight relay
+floor, synchronization, PRF budget - is available as an **opt-in overlay** and is
+**off by default**. ATLAS assumes a synchronized attacker and applies none of it,
+so turning it on shows a stricter, more physically honest attack that ATLAS itself
+would not generate. Leaving it off is what makes this a visualizer *of ATLAS*.
+
 ## Tests
 
 There is no JS runtime on this machine, so the suite runs in headless Chrome and
-reports through the DOM. 187 tests, exit code 0 on green:
+reports through the DOM. 323 tests, exit code 0 on green:
 
 ```sh
 ./run-tests.sh
@@ -72,22 +100,34 @@ nonzero (see the tripwire procedure in `test/harness.selftest.js`).
 ## Architecture
 
 ```
-src/core/     physics, no DOM access
-  polar.js          spherical decomposition, (azimuth x beam) cell quantization
-  sensor.js         sensor specs; point rate is the primitive, azimuth res derived
-  sensor-assets.js  GENERATED - beam inclinations measured from the real datasets
-  frame.js          PointFrame: CSR cell-occupancy index over a recorded cloud
-  tof.js            time of flight, relay floor, pulse prediction, sync quality
-  spoofer.js        spoofer hardware -> reachable cell set, line of sight
-  phantom.js        phantom generation by ray-casting reachable directions
-  inject.js         occlusion-aware injection (port of ATLAS spoof_frame)
-  remove.js         removal via saturated sub-MOT echo (the real PRA mechanism)
-  intensity.js      range-conditioned / saturated / constant intensity models
-  realizability.js  cell fill, firing budget, demonstrated-envelope verdict
-src/io/       .atlasframe reader, raw KITTI/nuScenes upload parsing
-src/ui/       render.js (BEV + range image), app.js (state, wiring)
-tools/        gen_sensor_assets.py, export_frames.py, parse_dom.py
-assets/frames real exported frames + manifest.json
+src/core/
+  ATLAS ports (v2 - what the visualizer shows by default)
+    atlas-inject.js   center_trace + place_trace_relative
+    atlas-removal.js  A-HFR: spoof_frame_ahfr_roadside, ahfr_gate_prob,
+                      select_initial_target, the rectangular sector
+    inject.js         spoof_frame occlusion; atlasFaithful mode skips v1's gates
+    intensity.js      range-conditioned / saturated / constant intensity
+    sweep.js          azimuth-ordered rotation state
+  lattice + sensor model (shared)
+    polar.js          spherical decomposition, (azimuth x beam) quantization
+    sensor.js         sensor specs; point rate primitive, azimuth res derived
+    sensor-assets.js  GENERATED - beam inclinations measured from the datasets
+    frame.js          PointFrame: CSR cell-occupancy index, azimuth-sorted
+  v1 physics (opt-in overlay, NOT ATLAS)
+    spoofer.js        hardware -> reachable cell set, line of sight
+    tof.js            relay floor, pulse prediction, sync quality
+    remove.js         Cao et al. sub-MOT saturation mechanism
+    phantom.js        ray-cast phantom shapes
+    realizability.js  cell fill, firing budget, demonstrated-envelope verdict
+  v3 groundwork (built early; not part of v2's story)
+    iou.js            oriented 3D IoU + box hit-testing
+    detect.js         PROXY detector - geometric detectability only
+    compose.js        the cloud a victim would report after an attack
+src/io/       .atlasframe frames, .atlastrace libraries, upload parsing, export
+src/ui/       render.js (BEV + range image + sweep), app.js (state, wiring)
+tools/        gen_sensor_assets.py, export_frames.py, export_traces.py,
+              export_headless.py, import_attack.py, run_eval.sh, parse_dom.py
+assets/       frames/ (5 real frames) + traces/ (6 ATLAS trace libraries)
 ```
 
 Numbers are generated, not transcribed: `tools/gen_sensor_assets.py` emits beam

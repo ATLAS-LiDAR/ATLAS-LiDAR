@@ -24,6 +24,17 @@
  *
  * Every candidate lands in exactly one of these buckets or is injected, so the
  * counts always reconcile against `requested`.
+ *
+ * ATLAS-FAITHFUL MODE (`atlasFaithful: true`)
+ * ATLAS's spoof_frame applies none of the gates above. It has no power envelope,
+ * no timing model and no MOT, and it evaluates each phantom point INDEPENDENTLY
+ * with no per-cell dedupe - so several phantom points may share one (az, beam)
+ * cell. That is not an oversight to be corrected here: it is exactly why
+ * osf_k6nf2/realizability.py exists, to ask afterwards whether the resulting
+ * phantom is physically producible (fill <= 1 return per cell). Faithful mode
+ * therefore keeps only the occlusion resolution, the ground anchoring and the
+ * range-conditioned intensity, and lets fill exceed 1 so the realizability panel
+ * can flag it.
  */
 import { cartToSpherical, azimuthCellIndex, nearestBeamIndex, cellKey } from "./polar.js";
 import { reachableCells } from "./spoofer.js";
@@ -91,6 +102,7 @@ export function injectPhantom({
   groundAnchor = true,
   groundRadiusM = 2.0,
   syncToleranceM = 0.5,
+  atlasFaithful = false,
 }) {
   const next = makeRng(seed);
   const nReq = phantom.x.length;
@@ -130,8 +142,9 @@ export function injectPhantom({
 
   const dz = groundAnchor ? groundAnchorZ({ frame, phantom, radiusM: groundRadiusM }) : 0;
 
-  // --- gate every candidate, keeping at most one per cell -----------------
-  const claimed = new Map(); // cell -> {r, x, y, z}
+  // --- gate every candidate ----------------------------------------------
+  const claimed = new Map(); // cell -> {r, x, y, z}  (physics mode)
+  const candidates = []; // ordered list            (ATLAS-faithful mode)
   for (let i = 0; i < nReq; i++) {
     const px = phantom.x[i];
     const py = phantom.y[i];
@@ -139,48 +152,53 @@ export function injectPhantom({
     const { r, az, el } = cartToSpherical(px, py, pz);
     const key = cellKey(azimuthCellIndex(az, sensor.azRes), nearestBeamIndex(el, sensor.inclinations), nBeams);
 
-    const weight = reachWeight.get(key);
-    if (weight === undefined) {
-      rejected.unreachable++;
-      continue;
-    }
-    // Firmware discards sub-MOT echoes regardless of the attacker.
-    if (r < sensor.minRange) {
-      rejected.mot++;
-      continue;
-    }
-    if (r > gateMaxRange || (!spoofer.canPredict && r < relayFloor)) {
-      rejected.tof++;
-      continue;
-    }
-    // Two independent physical effects, kept separate so the readout is
-    // diagnostic: the angular leakage response decides whether enough power
-    // reaches this cell at all, and lock quality decides whether the pulse
-    // lands in its slot. Folding them into one draw would report a fringe cell
-    // that never received power as a "sync miss".
-    if (next() > weight) {
-      rejected.response++;
-      continue;
-    }
-    const pSync = syncHitProbability({
-      sensor,
-      mode: spoofer.syncMode,
-      jitterS: spoofer.jitterS,
-      toleranceM: syncToleranceM,
-    });
-    if (next() > pSync) {
-      rejected.sync++;
-      continue;
-    }
+    if (!atlasFaithful) {
+      const weight = reachWeight.get(key);
+      if (weight === undefined) {
+        rejected.unreachable++;
+        continue;
+      }
+      // Firmware discards sub-MOT echoes regardless of the attacker.
+      if (r < sensor.minRange) {
+        rejected.mot++;
+        continue;
+      }
+      if (r > gateMaxRange || (!spoofer.canPredict && r < relayFloor)) {
+        rejected.tof++;
+        continue;
+      }
+      // Two independent physical effects, kept separate so the readout is
+      // diagnostic: the angular leakage response decides whether enough power
+      // reaches this cell at all, and lock quality decides whether the pulse
+      // lands in its slot. Folding them into one draw would report a fringe cell
+      // that never received power as a "sync miss".
+      if (next() > weight) {
+        rejected.response++;
+        continue;
+      }
+      const pSync = syncHitProbability({
+        sensor,
+        mode: spoofer.syncMode,
+        jitterS: spoofer.jitterS,
+        toleranceM: syncToleranceM,
+      });
+      if (next() > pSync) {
+        rejected.sync++;
+        continue;
+      }
 
-    const prev = claimed.get(key);
-    if (prev !== undefined) {
-      rejected.cellConflict++;
-      // A first/strongest-return sensor reports the nearer echo.
-      if (r < prev.r) claimed.set(key, { r, x: px, y: py, z: pz });
-      continue;
+      const prev = claimed.get(key);
+      if (prev !== undefined) {
+        rejected.cellConflict++;
+        // A first/strongest-return sensor reports the nearer echo.
+        if (r < prev.r) claimed.set(key, { r, x: px, y: py, z: pz });
+        continue;
+      }
+      claimed.set(key, { r, x: px, y: py, z: pz });
+    } else {
+      // No dedupe: ATLAS keeps every phantom point independently.
+      candidates.push({ key, r, x: px, y: py, z: pz });
     }
-    claimed.set(key, { r, x: px, y: py, z: pz });
   }
 
   // --- resolve against real returns, per ATLAS spoof_frame ----------------
@@ -191,7 +209,12 @@ export function injectPhantom({
   const keptR = [];
   let suppressed = 0;
 
-  for (const [key, p] of claimed) {
+  const resolveList = atlasFaithful
+    ? candidates
+    : Array.from(claimed, ([key, p]) => ({ key, ...p }));
+
+  for (const p of resolveList) {
+    const key = p.key;
     const { start, end } = frame.cellRange(key);
     if (end > start) {
       const nearestIdx = frame.order[start];
@@ -263,7 +286,18 @@ export function injectPhantom({
       rejected,
       groundShiftZ: dz,
       cellsReachable: reachInfo.cells.length,
-      fill: reachInfo.cells.length > 0 ? nInj / reachInfo.cells.length : 0,
+      // In ATLAS-faithful mode there is no envelope, so fill is measured against
+      // the cells the phantom itself occupies - and may exceed 1.
+      fill: atlasFaithful
+        ? (() => {
+            const occupied = new Set();
+            for (const c of resolveList) occupied.add(c.key);
+            return occupied.size > 0 ? nInj / occupied.size : 0;
+          })()
+        : reachInfo.cells.length > 0
+          ? nInj / reachInfo.cells.length
+          : 0,
+      atlasFaithful,
       relayFloor,
       budget,
       firingLimited: reachInfo.firingLimited,

@@ -116,6 +116,40 @@ function zOverlap(a, b) {
   return Math.max(0, Math.min(aHi, bHi) - Math.max(aLo, bLo));
 }
 
+/**
+ * Is a bird's-eye point inside a box's footprint? Used for click hit-testing so
+ * a user can select the vehicle they want erased.
+ */
+export function pointInBoxBEV(px, py, box) {
+  const b = normalizeBox(box);
+  const dx = px - b.center[0];
+  const dy = py - b.center[1];
+  const c = Math.cos(-b.yaw);
+  const s = Math.sin(-b.yaw);
+  const u = dx * c - dy * s;
+  const v = dx * s + dy * c;
+  return Math.abs(u) <= b.size[0] / 2 && Math.abs(v) <= b.size[1] / 2;
+}
+
+/**
+ * Index of the box whose footprint contains the point, preferring the smallest
+ * so a pedestrian standing beside a bus is still selectable. -1 if none.
+ */
+export function pickBoxAt(px, py, boxes) {
+  let best = -1;
+  let bestArea = Infinity;
+  for (let i = 0; i < boxes.length; i++) {
+    if (!pointInBoxBEV(px, py, boxes[i])) continue;
+    const b = normalizeBox(boxes[i]);
+    const area = b.size[0] * b.size[1];
+    if (area < bestArea) {
+      bestArea = area;
+      best = i;
+    }
+  }
+  return best;
+}
+
 /** 3D IoU, matching pcdet: rotated BEV intersection x vertical overlap. */
 export function iou3d(a, b) {
   const dz = zOverlap(a, b);

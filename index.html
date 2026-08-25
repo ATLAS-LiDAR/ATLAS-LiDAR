@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ATLAS-Sandbox — visualizing the ATLAS LiDAR spoofing attack</title>
+<title>ATLAS-Sandbox v2 — the ATLAS attack, visualized</title>
 <style>
   :root{
     --page:#FBFBF9; --panel:#FFFFFF; --inset:#F6F7F3;
     --line:#E4E6DF; --line-2:#EDEEE8;
     --ink:#1A1D19; --dim:#5C6359; --faint:#9AA093;
     --honest:#127C8A; --injected:#DD3B3B; --removed:#E0912B; --replaced:#B05CD6;
+    --sector:#9333EA;
     --accent:#76B900; --accent-d:#5E9400; --accent-ink:#14260A;
     --ok:#127C8A; --warn:#9A6410; --err:#B42A2A;
     --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -18,23 +19,23 @@
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--page);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
-  a{color:var(--accent-d)}
-  .article{max-width:1420px;margin:0 auto;padding:52px 24px 80px}
-  .prose{max-width:760px}
+  .article{max-width:1440px;margin:0 auto;padding:48px 24px 80px}
+  .prose{max-width:780px}
   .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--accent-d);margin:0 0 14px;display:flex;align-items:center;gap:10px}
   .eyebrow::before{content:"";width:22px;height:2px;background:var(--accent)}
   h1{font-size:32px;line-height:1.15;font-weight:650;letter-spacing:-.02em;margin:0 0 16px}
   .prose p{color:#33372F;font-size:16px;margin:0 0 14px}
   .k{font-family:var(--mono);font-size:13.5px;background:var(--inset);padding:1px 6px;border-radius:5px;color:var(--dim)}
 
-  .board{margin-top:36px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;
+  .board{margin-top:34px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;
          box-shadow:0 1px 2px rgba(30,40,20,.03),0 12px 34px -18px rgba(30,40,20,.14);
-         display:grid;grid-template-columns:310px 1fr}
+         display:grid;grid-template-columns:318px 1fr}
   @media(max-width:1080px){.board{grid-template-columns:1fr}}
-  aside{border-right:1px solid var(--line);padding:18px 18px 24px;max-height:none}
+  aside{border-right:1px solid var(--line);padding:18px 18px 24px}
   .group{border-top:1px solid var(--line-2);padding:14px 0 4px}
   .group:first-child{border-top:none;padding-top:0}
   .glabel{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin:0 0 11px}
+  .glabel.atlas{color:var(--accent-d)}
   label.field{display:block;margin-bottom:11px}
   label.field .cap{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
   label.field .cap span:first-child{font-size:13px}
@@ -45,9 +46,14 @@
   .seg{display:flex;gap:5px;margin-bottom:11px}
   .seg button{flex:1;background:#fff;color:var(--dim);border:1px solid var(--line);border-radius:7px;padding:7px 4px;font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;cursor:pointer}
   .seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+  .btn{width:100%;background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:8px;font-size:13px;cursor:pointer;margin-bottom:9px}
+  .btn:hover{background:var(--inset);border-color:var(--faint)}
+  .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
   .chk{display:flex;align-items:center;gap:8px;margin-bottom:9px;cursor:pointer;font-size:13px}
   .chk input{width:15px;height:15px;accent-color:var(--accent)}
-  .note{color:var(--faint);font-size:12px;margin:2px 0 0}
+  .note{color:var(--faint);font-size:12px;margin:2px 0 8px}
+  .target{font-family:var(--mono);font-size:12px;background:var(--inset);border:1px solid var(--line-2);border-radius:7px;padding:8px 10px;margin-bottom:9px;color:var(--dim)}
+  .target b{color:var(--injected);font-weight:600}
 
   main{padding:18px 20px 20px;min-width:0}
   .scopes{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -66,43 +72,33 @@
   .status.warn{color:var(--warn);border-color:rgba(224,145,43,.4);background:rgba(224,145,43,.08)}
   .status.err{color:var(--err);border-color:rgba(221,59,59,.4);background:rgba(221,59,59,.07)}
   .status.ok{color:var(--ok);border-color:rgba(18,124,138,.35);background:rgba(18,124,138,.06)}
-  .readout{border-top:1px solid var(--line-2);margin-top:14px;padding-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:12px 16px}
+  .readout{border-top:1px solid var(--line-2);margin-top:14px;padding-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:12px 16px}
   .stat .k2{font-family:var(--mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--faint);margin-bottom:2px}
   .stat .v{font-family:var(--mono);font-size:18px;font-weight:600}
   .stat .v small{font-size:11px;color:var(--dim);font-weight:400}
-  .stat.bad .v{color:var(--err)} .stat.warn2 .v{color:var(--warn)} .stat.good .v{color:var(--ok)}
-  .verdict{margin-top:14px;padding:11px 13px;border-radius:8px;border:1px solid var(--line-2);background:var(--inset)}
-  .verdict .vhead{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
-  .verdict .vname{font-family:var(--mono);font-size:14px;font-weight:600;margin-bottom:5px}
-  .verdict ul{margin:4px 0 0;padding-left:18px;font-size:12.5px;color:var(--dim)}
-  .verdict.impossible{border-color:rgba(221,59,59,.45);background:rgba(221,59,59,.06)}
-  .verdict.impossible .vname{color:var(--err)}
-  .verdict.demonstrated .vname{color:var(--ok)}
-  .verdict.extrapolation{border-color:rgba(224,145,43,.45);background:rgba(224,145,43,.07)}
-  .verdict.extrapolation .vname{color:var(--warn)}
-  .verdict.within-capability .vname{color:var(--dim)}
-  figcaption{max-width:900px;margin:20px 0 0;font-family:var(--serif);font-style:italic;font-size:14.5px;line-height:1.6;color:var(--dim)}
+  .stat.warn2 .v{color:var(--warn)} .stat.good .v{color:var(--ok)} .stat.bad .v{color:var(--err)}
+  figcaption{max-width:920px;margin:20px 0 0;font-family:var(--serif);font-style:italic;font-size:14.5px;line-height:1.6;color:var(--dim)}
   figcaption b{font-style:normal;font-family:var(--sans);color:var(--ink)}
 </style>
 </head>
 <body>
 <div class="article">
   <div class="prose">
-    <p class="eyebrow">ATLAS-Sandbox · v1</p>
-    <h1>Seeing the ATLAS attack, and what makes it possible</h1>
-    <p>ATLAS generates adversarial LiDAR data offline: it perturbs recorded frames and hands the result to a detector. What that perturbation actually <em>is</em> — which returns die, which cells a phantom can occupy, why a given point survives — stays buried in the pipeline. This figure puts it on screen. Pick a real recorded driving frame and watch the attack happen on the sensor's own scan lattice, return by return.</p>
-    <p>Two layers are on display. The perturbation itself is ATLAS: the same occlusion-aware injection, ground anchoring and range-conditioned intensity, reading the same measured beam geometry. Around it sits the part ATLAS leaves out — it <em>assumes</em> a synchronized attacker — so time of flight, synchronization and the receiver's angular leakage are modelled here explicitly. That is what lets the figure say not just what the attack does, but whether it is <span class="k">physically possible</span>, and how far it sits from what has been <span class="k">demonstrated</span> on real hardware.</p>
+    <p class="eyebrow">ATLAS-Sandbox · v2</p>
+    <h1>The ATLAS attack, visualized</h1>
+    <p>ATLAS generates adversarial LiDAR data offline: it perturbs recorded frames and hands the result to a detector. What the perturbation actually <em>is</em> — which returns die, where a phantom vehicle comes from, why a given point survives — stays buried in the pipeline. This is that pipeline, running in front of you, one frame at a time.</p>
+    <p>Everything here is a port of ATLAS's own algorithms. Injection samples a <em>real recorded vehicle</em> from the trace library and places it ahead of the ego; removal aims a roadside A-HFR spoofer at a vehicle you pick and deletes returns inside its sector. Watch the sensor spin and the cloud fill in the order it was really acquired.</p>
   </div>
 
-  <figure class="board" style="margin:36px 0 0">
+  <figure class="board" style="margin:34px 0 0">
     <aside>
       <div class="group">
         <p class="glabel">Recorded frame</p>
-        <label class="field"><div class="cap"><span>Scene library</span><span class="val" id="sceneSpec"></span></div>
+        <label class="field"><div class="cap"><span>Scene</span><span class="val" id="sceneSpec"></span></div>
           <select id="scene"></select></label>
-        <label class="field"><div class="cap"><span>Or upload a frame</span></div>
+        <label class="field"><div class="cap"><span>Or upload</span></div>
           <input type="file" id="upload" accept=".bin,.atlasframe,.pcd"></label>
-        <p class="note">Raw KITTI <span class="k">.bin</span> (stride 4) and nuScenes <span class="k">.pcd.bin</span> (stride 5) are read directly.</p>
+        <p class="note">Raw KITTI <span class="k">.bin</span> and nuScenes <span class="k">.pcd.bin</span> are read directly.</p>
       </div>
 
       <div class="group">
@@ -111,83 +107,75 @@
           <select id="sensor"></select></label>
         <label class="field"><div class="cap"><span>Spin rate</span><span class="val" id="hzVal"></span></div>
           <input type="range" id="hz" min="5" max="20" step="1" value="10"></label>
-        <div class="seg" role="group" aria-label="return mode">
-          <button id="rmSingle" aria-pressed="true">Strongest</button>
-          <button id="rmDual" aria-pressed="false">Dual return</button>
-        </div>
       </div>
 
       <div class="group">
-        <p class="glabel">Spoofer hardware</p>
-        <label class="field"><div class="cap"><span>Preset</span></div>
-          <select id="spooferPreset"></select></label>
-        <label class="field"><div class="cap"><span>Power over threshold</span><span class="val" id="powVal"></span></div>
-          <input type="range" id="power" min="0" max="4" step="0.05" value="0.52"></label>
-        <label class="field"><div class="cap"><span>Beam divergence</span><span class="val" id="divVal"></span></div>
-          <input type="range" id="divergence" min="0.2" max="20" step="0.1" value="3"></label>
-        <label class="field"><div class="cap"><span>Electronic latency</span><span class="val" id="latVal"></span></div>
-          <input type="range" id="latency" min="0" max="200" step="1" value="10"></label>
-        <label class="field"><div class="cap"><span>Pulse rate (PRF)</span><span class="val" id="prfVal"></span></div>
-          <input type="range" id="prf" min="3" max="6.5" step="0.05" value="5"></label>
-        <label class="field"><div class="cap"><span>Lock jitter</span><span class="val" id="jitVal"></span></div>
-          <input type="range" id="jitter" min="-1" max="2.7" step="0.05" value="0"></label>
-        <div class="seg" role="group" aria-label="sync mode">
-          <button id="syncLocked" aria-pressed="true">PRF locked</button>
-          <button id="syncFree" aria-pressed="false">Free-running</button>
-        </div>
-        <label class="chk"><input type="checkbox" id="canPredict" checked>
-          <span>Pulse prediction <span class="note" style="display:inline">(fire before arrival)</span></span></label>
-        <p class="note">Click the left view to move the spoofer.</p>
-      </div>
-
-      <div class="group">
-        <p class="glabel">Attack</p>
+        <p class="glabel atlas">ATLAS attack</p>
         <div class="seg" role="group" aria-label="attack mode">
-          <button id="atkInject" aria-pressed="true">Inject</button>
-          <button id="atkRemove" aria-pressed="false">Remove</button>
+          <button id="atkInject" aria-pressed="true">Inject phantom</button>
+          <button id="atkRemove" aria-pressed="false">Hide target</button>
         </div>
+
         <div id="injectOpts">
-          <div class="seg" role="group" aria-label="phantom shape">
-            <button id="shapeBox" aria-pressed="true">Phantom car</button>
-            <button id="shapeWall" aria-pressed="false">Wall</button>
-          </div>
-          <label class="field"><div class="cap"><span>Phantom range</span><span class="val" id="prVal"></span></div>
-            <input type="range" id="phantomRange" min="2" max="120" step="0.5" value="30"></label>
-          <label class="field"><div class="cap"><span>Phantom length</span><span class="val" id="plVal"></span></div>
-            <input type="range" id="phantomLen" min="0.5" max="12" step="0.1" value="4.2"></label>
+          <label class="field"><div class="cap"><span>Trace library</span><span class="val" id="diffSpec"></span></div>
+            <div class="seg" role="group" aria-label="difficulty" style="margin-bottom:0">
+              <button id="dEasy" aria-pressed="true">Easy</button>
+              <button id="dMedium" aria-pressed="false">Medium</button>
+              <button id="dHard" aria-pressed="false">Hard</button>
+            </div></label>
+          <p class="note">Difficulty is phantom point density: ATLAS samples a real recorded vehicle from <span class="k">trace_{easy,medium,hard}</span>.</p>
+          <button class="btn" id="reroll">Re-roll phantom (new seed)</button>
           <label class="field"><div class="cap"><span>Intensity model</span></div>
             <select id="intensityMode">
-              <option value="range-conditioned">Range-conditioned (in-distribution)</option>
-              <option value="saturated">Saturated (real spoofer, 255)</option>
-              <option value="constant">Constant value</option>
+              <option value="range-conditioned">Range-conditioned (ATLAS)</option>
+              <option value="saturated">Saturated (real spoofer)</option>
+              <option value="constant">Constant</option>
             </select></label>
+          <label class="chk"><input type="checkbox" id="groundAnchor" checked>
+            <span>Ground-anchor the phantom</span></label>
         </div>
+
         <div id="removeOpts" style="display:none">
-          <label class="field"><div class="cap"><span>Attacker echo range</span><span class="val" id="arVal"></span></div>
-            <input type="range" id="attackerRange" min="0.05" max="30" step="0.05" value="0.2"></label>
-          <p class="note">Below the sensor's MOT the return is destroyed; above it, range-replaced.</p>
+          <div class="target" id="targetInfo">No target selected</div>
+          <button class="btn" id="autoTarget">Auto-select target (ATLAS)</button>
+          <p class="note">Or click a vehicle in the left view to aim at it.</p>
+          <label class="field"><div class="cap"><span>Sector width <span class="k">az_width</span></span><span class="val" id="azwVal"></span></div>
+            <input type="range" id="azWidth" min="4" max="60" step="1" value="20"></label>
+          <label class="field"><div class="cap"><span><span class="k">p_remove</span></span><span class="val" id="prVal"></span></div>
+            <input type="range" id="pRemove" min="0" max="1" step="0.01" value="0.96"></label>
+          <label class="chk"><input type="checkbox" id="forceActive">
+            <span>Force the scan gate active <span class="note" style="display:inline">(skip the frame draw)</span></span></label>
         </div>
-        <label class="chk"><input type="checkbox" id="groundAnchor" checked>
-          <span>Ground-anchor the phantom</span></label>
       </div>
 
       <div class="group">
-        <p class="glabel">Export</p>
-        <div class="seg" role="group" aria-label="export">
-          <button id="exportBtn" style="flex:1">Download attack bundle</button>
+        <p class="glabel">Playback</p>
+        <div class="seg" role="group" aria-label="playback">
+          <button id="playBtn" aria-pressed="true">Spinning</button>
+          <button id="fullBtn" aria-pressed="false">Full frame</button>
         </div>
-        <p class="note">A <span class="k">.atlasattack</span> bundle for
-          <span class="k">tools/import_attack.py</span> &rarr; the real detectors.</p>
+        <label class="field"><div class="cap"><span>Speed</span><span class="val" id="speedVal"></span></div>
+          <input type="range" id="speed" min="-2" max="0.3" step="0.05" value="-0.9"></label>
+      </div>
+
+      <div class="group">
+        <p class="glabel">Physical feasibility overlay</p>
+        <label class="chk"><input type="checkbox" id="overlay">
+          <span>Gate the attack by physics <span class="note" style="display:inline">(NOT part of ATLAS)</span></span></label>
+        <p class="note">Adds the v1 model: power-derived envelope, line of sight, time-of-flight floor, synchronization. ATLAS assumes a synchronized attacker and applies none of these, so leave it off to see what ATLAS generates.</p>
+        <label class="field" id="spooferRow" style="display:none"><div class="cap"><span>Spoofer hardware</span></div>
+          <select id="spooferPreset"></select></label>
       </div>
 
       <div class="group">
         <p class="glabel">View</p>
         <label class="field"><div class="cap"><span>Range</span><span class="val" id="rangeVal"></span></div>
-          <input type="range" id="viewRange" min="20" max="120" step="5" value="80"></label>
+          <input type="range" id="viewRange" min="20" max="120" step="5" value="70"></label>
         <label class="chk"><input type="checkbox" id="showRemoved" checked>
           <span>Mark destroyed returns</span></label>
         <label class="chk"><input type="checkbox" id="showBoxes" checked>
           <span>Ground-truth boxes</span></label>
+        <button class="btn" id="exportBtn">Download attack bundle</button>
       </div>
     </aside>
 
@@ -198,58 +186,31 @@
           <canvas id="cvClean" width="600" height="600" aria-label="Recorded point cloud, bird's eye view"></canvas>
         </div>
         <div class="scope">
-          <h2>Under attack <span class="tag pert">perturbed</span></h2>
+          <h2>Under ATLAS attack <span class="tag pert">perturbed</span></h2>
           <canvas id="cvPert" width="600" height="600" aria-label="Perturbed point cloud, bird's eye view"></canvas>
         </div>
       </div>
 
       <div class="lattice">
-        <h2>Scan lattice — azimuth × beam, windowed on the spoofer bearing</h2>
-        <canvas id="cvLattice" width="1200" height="260" aria-label="Range image of the scan lattice"></canvas>
+        <h2>Scan lattice — azimuth × beam, windowed on the aim point</h2>
+        <canvas id="cvLattice" width="1200" height="240" aria-label="Range image of the scan lattice"></canvas>
       </div>
 
       <div class="legend">
         <span><i style="background:var(--honest)"></i>honest return</span>
-        <span><i style="background:var(--injected)"></i>injected</span>
+        <span><i style="background:var(--injected)"></i>phantom (injected)</span>
         <span><i style="background:var(--removed)"></i>destroyed</span>
-        <span><i style="background:var(--replaced)"></i>range-replaced</span>
-        <span><i style="background:rgba(221,59,59,.25)"></i>reachable envelope</span>
+        <span><i style="background:rgba(147,51,234,.35)"></i>A-HFR sector</span>
+        <span><i style="background:var(--accent)"></i>beam</span>
       </div>
 
-      <div id="status" class="status">Loading scene library…</div>
+      <div id="status" class="status">Loading…</div>
 
-      <div class="readout">
-        <div class="stat"><div class="k2">Frame points</div><div class="v" id="stPoints">—</div></div>
-        <div class="stat"><div class="k2">Injected</div><div class="v" id="stInject">—</div></div>
-        <div class="stat"><div class="k2">Destroyed</div><div class="v" id="stRemoved">—</div></div>
-        <div class="stat"><div class="k2">Reachable cells</div><div class="v" id="stCells">—</div></div>
-        <div class="stat"><div class="k2">Envelope width</div><div class="v" id="stEnv">—</div></div>
-        <div class="stat"><div class="k2">Cell fill</div><div class="v" id="stFill">—</div></div>
-        <div class="stat"><div class="k2">Standoff</div><div class="v" id="stStandoff">—</div></div>
-        <div class="stat"><div class="k2">Relay floor</div><div class="v" id="stFloor">—</div></div>
-        <div class="stat"><div class="k2">Sync hit rate</div><div class="v" id="stSync">—</div></div>
-        <div class="stat"><div class="k2">Firing budget</div><div class="v" id="stBudget">—</div></div>
-      </div>
-
-      <div id="verdict" class="verdict">
-        <div class="vhead">Physical realizability</div>
-        <div class="vname" id="vName">—</div>
-        <ul id="vReasons"></ul>
-      </div>
-
-      <div class="readout" style="border-top:none;padding-top:6px">
-        <div class="stat"><div class="k2">Rejected · unreachable</div><div class="v" id="rjReach">—</div></div>
-        <div class="stat"><div class="k2">Rejected · weak response</div><div class="v" id="rjResp">—</div></div>
-        <div class="stat"><div class="k2">Rejected · time of flight</div><div class="v" id="rjTof">—</div></div>
-        <div class="stat"><div class="k2">Rejected · sub-MOT</div><div class="v" id="rjMot">—</div></div>
-        <div class="stat"><div class="k2">Rejected · sync miss</div><div class="v" id="rjSync">—</div></div>
-        <div class="stat"><div class="k2">Rejected · cell taken</div><div class="v" id="rjCell">—</div></div>
-        <div class="stat"><div class="k2">Rejected · occluded</div><div class="v" id="rjOcc">—</div></div>
-      </div>
+      <div class="readout" id="readout"></div>
     </main>
   </figure>
 
-  <figcaption><b>Figure.</b> A recorded LiDAR frame is re-indexed onto its sensor's scan lattice, so the attack is visible as edits to (azimuth × beam) cells rather than to free-floating points. <b>From ATLAS:</b> injection succeeds only where no real surface lies closer, a phantom that becomes the first return destroys the genuine echoes behind it, and phantom intensity is drawn from range-conditioned statistics of real returns. <b>Added here:</b> the reachable set is derived from the spoofer's power over the victim's detection threshold, its divergence and its standoff rather than chosen by a slider, and is clipped by line of sight through the recorded geometry; a phantom must also be reachable in time, since a relay spoofer cannot place one closer than its own standoff without predicting the next pulse. Removal likewise runs by its real mechanism — a saturated echo inside the sensor's minimum operational threshold, which the firmware discards along with the genuine return.</figcaption>
+  <figcaption><b>Figure.</b> A recorded frame re-indexed onto its sensor's scan lattice, with ATLAS's own attacks applied. <b>Injection</b> samples a real recorded vehicle from the trace library, de-rotates and re-places it 15–20 m ahead with a small random yaw, anchors it to the local ground, gives it range-conditioned intensity, and resolves occlusion per (azimuth × beam) cell — a phantom behind a real surface is dropped, a phantom in front destroys what was behind it. <b>Removal</b> aims a roadside A-HFR spoofer at a chosen vehicle, rate-limits its aim like a servo, draws a frame-level scan gate whose probability is a measured function of target range, and deletes each return inside a hard 20°×16° sector with probability 0.96. The sweep reveals points in the order the sensor actually acquired them.</figcaption>
 </div>
 <script type="module">
   import { boot } from "./src/ui/app.js";

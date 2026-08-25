@@ -1,18 +1,22 @@
 /**
  * Rendering.
  *
- * Two deliberate choices, both fixing problems in the single-file MVP:
+ * Three deliberate choices:
  *
- *  1. The palette is a hoisted constant. The MVP called getComputedStyle()
- *     *per point* inside the draw loop, forcing a style recalculation thousands
- *     of times per frame.
- *  2. Points are splatted into an ImageData buffer rather than drawn as
- *     individual arc() paths. At 120k points per frame that is the difference
+ *  1. The palette is a hoisted constant. The MVP called getComputedStyle() *per
+ *     point* inside the draw loop, forcing thousands of style recalcs a frame.
+ *  2. Points are splatted into an ImageData buffer rather than drawn as arc()
+ *     paths, and the background is cleared through a Uint32 view (one write per
+ *     pixel instead of four). At 120k points and 60 fps that is the difference
  *     between an interactive view and a slideshow.
+ *  3. The sweep reveals points in true azimuth order by walking a prefix of
+ *     `frame.order`, which is already azimuth-sorted. The animation therefore
+ *     shows the order the sensor really acquired the cloud, not a decoration.
  *
- * The range-image view (azimuth x beam) is the one that makes the physics
- * legible: it shows the scan lattice directly, so the reachable envelope,
- * injected cells and destroyed cells are visible as what they are - cells.
+ * ATLAS's removal sector is drawn as what it is - a hard rectangle in azimuth,
+ * uniform inside - and is visually distinct from the v1 physics envelope, which
+ * is a power-derived Gaussian. Conflating the two on screen would misrepresent
+ * which model produced the attack.
  */
 
 export const PALETTE = Object.freeze({
@@ -26,13 +30,17 @@ export const PALETTE = Object.freeze({
   ego: [42, 46, 40],
   spoofer: [221, 59, 59],
   reach: [221, 59, 59],
+  atlasSector: [147, 51, 234],
   box: [110, 120, 104],
-  boxHit: [221, 59, 59],
+  target: [221, 59, 59],
+  phantom: [221, 59, 59],
+  beam: [118, 185, 0],
   text: "#5C6359",
   faint: "#9AA093",
 });
 
 const rgb = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const packBg = (c) => (255 << 24) | (c[2] << 16) | (c[1] << 8) | c[0];
 
 /** World (metres, sensor frame) -> canvas pixels, ego centred. */
 export function makeView(canvas, rangeM) {
@@ -55,25 +63,48 @@ export function makeView(canvas, rangeM) {
 }
 
 function splat(img, W, H, sx, sy, colour, alpha, size) {
-  const x0 = Math.max(0, Math.round(sx) - size);
-  const x1 = Math.min(W - 1, Math.round(sx) + size);
-  const y0 = Math.max(0, Math.round(sy) - size);
-  const y1 = Math.min(H - 1, Math.round(sy) + size);
+  const x0 = Math.max(0, (sx | 0) - size);
+  const x1 = Math.min(W - 1, (sx | 0) + size);
+  const y0 = Math.max(0, (sy | 0) - size);
+  const y1 = Math.min(H - 1, (sy | 0) + size);
   for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) {
-      const o = (y * W + x) * 4;
-      img[o] = img[o] + (colour[0] - img[o]) * alpha;
-      img[o + 1] = img[o + 1] + (colour[1] - img[o + 1]) * alpha;
-      img[o + 2] = img[o + 2] + (colour[2] - img[o + 2]) * alpha;
+    let o = (y * W + x0) * 4;
+    for (let x = x0; x <= x1; x++, o += 4) {
+      img[o] += (colour[0] - img[o]) * alpha;
+      img[o + 1] += (colour[1] - img[o + 1]) * alpha;
+      img[o + 2] += (colour[2] - img[o + 2]) * alpha;
       img[o + 3] = 255;
     }
   }
 }
 
+function strokeBox(ctx, v, box, colour, width = 1, dash = null) {
+  const c = Math.cos(box.yaw ?? 0);
+  const s = Math.sin(box.yaw ?? 0);
+  const hx = box.size[0] / 2;
+  const hy = box.size[1] / 2;
+  ctx.save();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = width;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath();
+  [[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]].forEach(([lx, ly], i) => {
+    const wx = box.center[0] + lx * c - ly * s;
+    const wy = box.center[1] + lx * s + ly * c;
+    const [px, py] = v.px(wx, wy);
+    if (i) ctx.lineTo(px, py);
+    else ctx.moveTo(px, py);
+  });
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+}
+
 /**
- * Bird's-eye view of a frame, optionally perturbed.
- * `keepMask` 0 marks a destroyed return; pass showRemoved to draw those in
- * place so the user can see what the attack deleted.
+ * Bird's-eye view of a frame, optionally perturbed and optionally mid-sweep.
+ *
+ * sweep: {cutoff, azIdx, az} reveals only the points the beam has passed.
+ *        Pass null to show the whole revolution at once.
  */
 export function renderBEV(canvas, {
   frame,
@@ -82,10 +113,15 @@ export function renderBEV(canvas, {
   replacement = null,
   boxes = [],
   reach = null,
+  atlasSector = null,
   spooferPos = null,
+  targetBox = null,
+  phantomBox = null,
   rangeM = 80,
   showRemoved = true,
   pointSize = 0,
+  sweep = null,
+  sectorActive = false,
 }) {
   const ctx = canvas.getContext("2d");
   const v = makeView(canvas, rangeM);
@@ -93,15 +129,13 @@ export function renderBEV(canvas, {
 
   const imageData = ctx.createImageData(W, H);
   const img = imageData.data;
-  for (let i = 0; i < img.length; i += 4) {
-    img[i] = PALETTE.bg[0];
-    img[i + 1] = PALETTE.bg[1];
-    img[i + 2] = PALETTE.bg[2];
-    img[i + 3] = 255;
-  }
+  new Uint32Array(imageData.data.buffer).fill(packBg(PALETTE.bg));
 
-  // real returns
-  for (let i = 0; i < frame.count; i++) {
+  // --- real returns, in azimuth order when sweeping ---
+  const n = frame.count;
+  const limit = sweep ? Math.min(sweep.cutoff, n) : n;
+  for (let k = 0; k < limit; k++) {
+    const i = sweep ? frame.order[k] : k;
     const destroyed = keepMask !== null && keepMask[i] === 0;
     if (destroyed && !showRemoved) continue;
     const [sx, sy] = v.px(frame.x[i], frame.y[i]);
@@ -113,17 +147,22 @@ export function renderBEV(canvas, {
       destroyed ? 1 : pointSize
     );
   }
-  // range-replaced returns
+
+  const revealed = (az) => !sweep || az <= sweep.az;
+
   if (replacement) {
     for (let i = 0; i < replacement.x.length; i++) {
+      const az = Math.atan2(replacement.y[i], replacement.x[i]);
+      if (!revealed(az < 0 ? az + 2 * Math.PI : az)) continue;
       const [sx, sy] = v.px(replacement.x[i], replacement.y[i]);
       if (sx < 0 || sx >= W || sy < 0 || sy >= H) continue;
       splat(img, W, H, sx, sy, PALETTE.replaced, 1, 1);
     }
   }
-  // injected phantom
   if (spoof) {
     for (let i = 0; i < spoof.x.length; i++) {
+      const az = spoof.az ? spoof.az[i] : Math.atan2(spoof.y[i], spoof.x[i]);
+      if (!revealed(az < 0 ? az + 2 * Math.PI : az)) continue;
       const [sx, sy] = v.px(spoof.x[i], spoof.y[i]);
       if (sx < 0 || sx >= W || sy < 0 || sy >= H) continue;
       splat(img, W, H, sx, sy, PALETTE.injected, 1, 1);
@@ -145,18 +184,18 @@ export function renderBEV(canvas, {
     ctx.fillText(r.toFixed(0) + "m", v.cx + 3, v.cy - r * v.scale + 11);
   }
 
-  // reachable wedge
-  if (reach && reach.feasible && spooferPos) {
-    const g = reach.geometry;
-    const half = reach.envelope.halfWidthAz;
-    ctx.fillStyle = rgb(PALETTE.reach, 0.1);
-    ctx.strokeStyle = rgb(PALETTE.reach, 0.4);
+  // ATLAS's removal sector: a hard rectangle in azimuth, uniform inside
+  if (atlasSector) {
+    const half = (atlasSector.azWidthDeg * Math.PI) / 180 / 2;
+    const R = rangeM * 1.6;
+    ctx.fillStyle = rgb(PALETTE.atlasSector, sectorActive ? 0.2 : 0.1);
+    ctx.strokeStyle = rgb(PALETTE.atlasSector, sectorActive ? 0.85 : 0.45);
+    ctx.lineWidth = sectorActive ? 1.6 : 1;
     ctx.beginPath();
     ctx.moveTo(v.cx, v.cy);
-    const R = Math.min(v.W, v.H);
-    for (let a = -half; a <= half; a += Math.max(half / 24, 1e-4)) {
-      const ang = g.bearing + a;
-      const [sx, sy] = v.px(Math.cos(ang) * rangeM * 1.5, Math.sin(ang) * rangeM * 1.5);
+    for (let a = -half; a <= half; a += Math.max(half / 32, 1e-4)) {
+      const ang = atlasSector.azCenter + a;
+      const [sx, sy] = v.px(Math.cos(ang) * R, Math.sin(ang) * R);
       ctx.lineTo(sx, sy);
     }
     ctx.closePath();
@@ -164,24 +203,53 @@ export function renderBEV(canvas, {
     ctx.stroke();
   }
 
-  // ground-truth boxes
-  for (const b of boxes) {
-    const c = Math.cos(b.yaw);
-    const s = Math.sin(b.yaw);
-    const hx = b.size[0] / 2;
-    const hy = b.size[1] / 2;
-    ctx.strokeStyle = rgb(PALETTE.box, 0.75);
+  // v1 physics envelope (power-derived, Gaussian) - only when the overlay is on
+  if (reach && reach.feasible && spooferPos) {
+    const half = reach.envelope.halfWidthAz;
+    ctx.fillStyle = rgb(PALETTE.reach, 0.09);
+    ctx.strokeStyle = rgb(PALETTE.reach, 0.35);
     ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
     ctx.beginPath();
-    [[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]].forEach(([lx, ly], i) => {
-      const wx = b.center[0] + lx * c - ly * s;
-      const wy = b.center[1] + lx * s + ly * c;
-      const [sx, sy] = v.px(wx, wy);
-      if (i) ctx.lineTo(sx, sy);
-      else ctx.moveTo(sx, sy);
-    });
+    ctx.moveTo(v.cx, v.cy);
+    for (let a = -half; a <= half; a += Math.max(half / 24, 1e-4)) {
+      const ang = reach.geometry.bearing + a;
+      const [sx, sy] = v.px(Math.cos(ang) * rangeM * 1.5, Math.sin(ang) * rangeM * 1.5);
+      ctx.lineTo(sx, sy);
+    }
     ctx.closePath();
+    ctx.fill();
     ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // ground-truth boxes
+  for (const b of boxes) strokeBox(ctx, v, b, rgb(PALETTE.box, 0.7), 1);
+  if (targetBox) strokeBox(ctx, v, targetBox, rgb(PALETTE.target, 0.95), 2.2);
+  if (phantomBox) strokeBox(ctx, v, phantomBox, rgb(PALETTE.phantom, 0.9), 1.8, [5, 3]);
+
+  // the rotating beam
+  if (sweep) {
+    const R = Math.min(W, H) / 2;
+    ctx.save();
+    ctx.translate(v.cx, v.cy);
+    for (let i = 0; i < 14; i++) {
+      const a = sweep.az - i * 0.045;
+      ctx.strokeStyle = rgb(PALETTE.beam, 0.18 * (1 - i / 14));
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      // screen y is inverted and x is -y, so rotate accordingly
+      ctx.lineTo(-Math.sin(a) * R, -Math.cos(a) * R);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = rgb(PALETTE.beam, 0.9);
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-Math.sin(sweep.az) * R, -Math.cos(sweep.az) * R);
+    ctx.stroke();
+    ctx.restore();
   }
 
   // ego
@@ -219,15 +287,18 @@ export function renderBEV(canvas, {
 
 /**
  * The scan lattice itself: azimuth columns across, beams down, windowed around
- * the spoofer bearing. This is where the per-cell physics becomes visible.
+ * the attack's aim point. This is where the per-cell view becomes legible.
  */
 export function renderRangeImage(canvas, {
   frame,
   sensor,
   keepMask = null,
+  centerAz = 0,
   reach = null,
   spoofCells = null,
+  sectorMask = null,
   windowDeg = 25,
+  sweep = null,
 }) {
   const ctx = canvas.getContext("2d");
   const W = canvas.width;
@@ -235,16 +306,14 @@ export function renderRangeImage(canvas, {
   ctx.fillStyle = rgb(PALETTE.bg);
   ctx.fillRect(0, 0, W, H);
 
-  const centreAz = reach && reach.feasible ? reach.geometry.bearing : 0;
   const halfWin = (windowDeg * Math.PI) / 180;
-  const colFrom = Math.round((centreAz - halfWin) / sensor.azRes);
-  const colTo = Math.round((centreAz + halfWin) / sensor.azRes);
-  const nCols = colTo - colFrom;
+  const colFrom = Math.round((centerAz - halfWin) / sensor.azRes);
+  const colTo = Math.round((centerAz + halfWin) / sensor.azRes);
+  const nCols = Math.max(1, colTo - colFrom);
   const cw = W / nCols;
   const ch = H / sensor.nBeams;
   const wrap = (c) => ((c % sensor.azCellCount) + sensor.azCellCount) % sensor.azCellCount;
 
-  // occupancy: any real return in the cell
   for (let c = colFrom; c < colTo; c++) {
     const col = wrap(c);
     for (let b = 0; b < sensor.nBeams; b++) {
@@ -252,19 +321,23 @@ export function renderRangeImage(canvas, {
       const { start, end } = frame.cellRange(key);
       if (end === start) continue;
       let alive = false;
+      let inSector = false;
       for (let i = start; i < end; i++) {
-        if (keepMask === null || keepMask[frame.order[i]]) alive = true;
+        const p = frame.order[i];
+        if (keepMask === null || keepMask[p]) alive = true;
+        if (sectorMask && sectorMask[p]) inSector = true;
       }
       const x = (c - colFrom) * cw;
       const y = b * ch;
-      ctx.fillStyle = alive ? rgb(PALETTE.honest, 0.55) : rgb(PALETTE.removed, 0.95);
+      ctx.fillStyle = alive
+        ? rgb(PALETTE.honest, inSector ? 0.8 : 0.5)
+        : rgb(PALETTE.removed, 0.95);
       ctx.fillRect(x, y, Math.max(cw, 1), Math.max(ch - 0.5, 1));
     }
   }
 
-  // reachable envelope outline
   if (reach && reach.feasible) {
-    ctx.fillStyle = rgb(PALETTE.reach, 0.10);
+    ctx.fillStyle = rgb(PALETTE.reach, 0.1);
     for (let i = 0; i < reach.cells.length; i++) {
       const col = Math.floor(reach.cells[i] / sensor.nBeams);
       const b = reach.cells[i] - col * sensor.nBeams;
@@ -276,7 +349,6 @@ export function renderRangeImage(canvas, {
     }
   }
 
-  // injected cells
   if (spoofCells) {
     ctx.fillStyle = rgb(PALETTE.injected, 0.95);
     for (let i = 0; i < spoofCells.length; i++) {
@@ -290,16 +362,30 @@ export function renderRangeImage(canvas, {
     }
   }
 
-  // axes
+  // where the beam currently is, in lattice coordinates
+  if (sweep) {
+    let c = Math.floor(sweep.az / sensor.azRes);
+    if (c - colFrom < -sensor.azCellCount / 2) c += sensor.azCellCount;
+    if (c - colFrom > sensor.azCellCount / 2) c -= sensor.azCellCount;
+    if (c >= colFrom && c < colTo) {
+      ctx.strokeStyle = rgb(PALETTE.beam, 0.9);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo((c - colFrom) * cw, 0);
+      ctx.lineTo((c - colFrom) * cw, H);
+      ctx.stroke();
+    }
+  }
+
   ctx.strokeStyle = rgb(PALETTE.grid);
   ctx.lineWidth = 1;
   ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
   ctx.fillStyle = PALETTE.faint;
   ctx.font = "10px ui-monospace, monospace";
-  ctx.fillText(`azimuth ${(-windowDeg).toFixed(0)}°`, 4, H - 4);
+  ctx.fillText(`${(-windowDeg).toFixed(0)}°`, 4, H - 4);
   ctx.textAlign = "right";
-  ctx.fillText(`+${windowDeg.toFixed(0)}° (bearing-relative)`, W - 4, H - 4);
+  ctx.fillText(`+${windowDeg.toFixed(0)}° from aim point`, W - 4, H - 4);
   ctx.textAlign = "left";
-  ctx.fillText(`beam 0`, 4, 11);
+  ctx.fillText("beam 0", 4, 11);
   ctx.fillText(`beam ${sensor.nBeams - 1}`, 4, H - 16);
 }
