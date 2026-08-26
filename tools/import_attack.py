@@ -225,7 +225,7 @@ def main():
         apath = os.path.join(annos_dir, "%s_a.pkl" % seg)
         with open(apath, "wb") as f:
             pkl.dump({"segment": seg, "spoof_annos": metas[seg],
-                      "source": "atlas-sandbox export", "layout": layout}, f)
+                      "source": "atlas-lidar sandbox export", "layout": layout}, f)
         total = sum(fr["points"].shape[0] for fr in frames)
 
         if layout == "kitti":

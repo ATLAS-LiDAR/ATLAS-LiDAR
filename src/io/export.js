@@ -22,7 +22,7 @@
 export const ATTACK_MAGIC = "ATLATTK1";
 
 const PROXY_NOTE =
-  "Perturbed cloud exported from ATLAS-Sandbox. Any ASR shown in the sandbox UI " +
+  "Perturbed cloud exported from the ATLAS sandbox. Any ASR shown in the sandbox UI " +
   "is from a clustering PROXY detector and is not comparable to the paper's " +
   "numbers; run this bundle through the real detectors for those.";
 
