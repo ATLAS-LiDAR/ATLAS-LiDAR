@@ -19,6 +19,11 @@ The comparison is made EXACT by removing randomness from both sides:
 Intensity is left out of the comparison: it is drawn at random on both sides and
 does not affect geometry.
 
+ATLAS is imported from the in-repo atlas/ package, so this needs numpy and nothing
+else - no sibling checkout, no conda env, no GPU, no raw datasets. That copy is
+pinned by atlas/PROVENANCE.json (tools/check_provenance.py), so agreement here is
+still transitively agreement with the published implementation.
+
     python3 tools/crossvalidate.py                 # default grid
     python3 tools/crossvalidate.py --frames kitti-open-road --verbose
 """
@@ -48,27 +53,6 @@ ATLAS_AZ_WIDTHS = (10, 20, 30, 40, 50, 60)
 # pinned by atlas/PROVENANCE.json (tools/check_provenance.py), so comparing against
 # it is still transitively a comparison against the published implementation.
 sys.path.insert(0, os.path.join(ROOT, "atlas"))
-
-
-def _stub_plotting():
-    """removal.py imports matplotlib and plotly at module level for its plotting
-    helpers. We only call its physics, so stub them rather than requiring a
-    plotting stack to be installed."""
-    import types
-    for name in ("matplotlib", "matplotlib.pyplot", "plotly",
-                 "plotly.graph_objects", "plotly.io"):
-        if name not in sys.modules:
-            mod = types.ModuleType(name)
-            mod.__getattr__ = lambda _n: (lambda *a, **k: None)
-            sys.modules[name] = mod
-    # package attributes so `import plotly.graph_objects as go` resolves
-    sys.modules["plotly"].graph_objects = sys.modules["plotly.graph_objects"]
-    sys.modules["plotly"].io = sys.modules["plotly.io"]
-    sys.modules["matplotlib"].pyplot = sys.modules["matplotlib.pyplot"]
-
-
-_stub_plotting()
-
 
 class ZeroRng:
     """A generator whose every draw is the deterministic extreme.

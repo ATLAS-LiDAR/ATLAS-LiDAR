@@ -25,6 +25,21 @@ Editing these files is allowed — it is how upstream fixes land — but it has 
 deliberate: change the file, re-run `tools/crossvalidate.py`, and only then re-record
 with `tools/check_provenance.py --update`.
 
+## Declared local patches
+
+`PROVENANCE.json` records two hashes per file — `upstream` (what the pipeline repo
+had) and `local` (what ships here). They are equal everywhere except the files listed
+in its `patches` map. Currently there is exactly one:
+
+- **`removal.py`** — deleted three module-level plotting imports
+  (`matplotlib.pyplot as plt`, `plotly.graph_objects as go`, `plotly.io as pio`).
+  All three were **unreferenced anywhere in the file**, verified by walking the AST
+  rather than grepping. Their only effect was to make importing the A-HFR physics
+  require a plotting stack, which is why `tools/crossvalidate.py` used to install
+  fake `matplotlib` and `plotly` modules before it could import the reference
+  implementation. That hack is gone. Cross-validation re-run after the change:
+  129/129, unchanged.
+
 ## The two nuScenes calibration sets are not interchangeable
 
 Both ship here, and they were measured over different amounts of data:

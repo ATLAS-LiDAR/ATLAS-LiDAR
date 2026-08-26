@@ -1,7 +1,8 @@
-import matplotlib.pyplot as plt
-import plotly.graph_objects as go
+# LOCAL PATCH vs upstream: three unused plotting imports removed. See
+# atlas/PROVENANCE.md. matplotlib and plotly were imported at module level but
+# never referenced anywhere in this file (verified by AST, not grep), so importing
+# the A-HFR physics required a plotting stack for no reason. No behaviour change.
 import numpy as np
-import plotly.io as pio
 
 
 

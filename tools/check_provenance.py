@@ -8,21 +8,27 @@ here, that comparison is between two implementations in the same repository, and
 would quietly lose its meaning if someone edited atlas/ to make a disagreement go
 away.
 
-So the extraction is pinned instead. atlas/PROVENANCE.json records the sha256 of
-every file copied out of the paper's pipeline repo, and this script checks them. As
-long as they match, cross-validation is still transitively a check against the
-published implementation rather than against a local edit.
+So the extraction is pinned instead. atlas/PROVENANCE.json records two hashes per
+file:
 
-    tools/check_provenance.py              # verify against the recorded hashes
-    tools/check_provenance.py --vs-phm     # also diff against the pipeline repo
+    upstream  what the pipeline repo had at the extraction commit
+    local     what we actually ship
+
+They are equal for every file except the ones named in the manifest's `patches`
+map, where a local deviation is declared with its justification. That way a
+deliberate change is self-documenting and a silent one is caught.
+
+    tools/check_provenance.py              # verify local hashes + declared patches
+    tools/check_provenance.py --vs-phm     # also check upstream for drift
+    tools/check_provenance.py --update     # re-record local hashes
 
 --vs-phm detects DRIFT: if the pipeline repo's ATLAS changes after this extraction,
-the two are no longer the same attack and the copy here needs refreshing (which
-means re-running cross-validation, not just re-recording a hash).
+the two are no longer the same attack and the copy here needs refreshing - which
+means re-running cross-validation, not just re-recording a hash.
 
-Editing atlas/ is not forbidden - it is how upstream fixes land - but it must be
-deliberate: change the file, re-run tools/crossvalidate.py, and re-record the hash
-with --update. A silent edit is what this catches.
+Editing atlas/ is not forbidden; it is how upstream fixes and patches land. But it
+must be deliberate: change the file, re-run tools/crossvalidate.py, declare the
+reason in `patches` if it is a local deviation, then --update.
 """
 import argparse
 import hashlib
@@ -43,57 +49,71 @@ def sha256(path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--vs-phm", action="store_true",
-                    help="also compare against the pipeline repo, to detect upstream drift")
+                    help="also compare upstream hashes against the pipeline repo")
     ap.add_argument("--update", action="store_true",
-                    help="re-record the hashes (only after re-running crossvalidate.py)")
+                    help="re-record local hashes (only after re-running crossvalidate.py)")
     a = ap.parse_args()
 
     manifest = json.load(open(MANIFEST))
-    recorded = manifest["files"]
+    files = manifest["files"]
+    patches = manifest.get("patches", {})
     rc = 0
 
     if a.update:
-        for f in recorded:
-            recorded[f] = sha256(os.path.join(ROOT, "atlas", f))
+        for f, rec in files.items():
+            rec["local"] = sha256(os.path.join(ROOT, "atlas", f))
         json.dump(manifest, open(MANIFEST, "w"), indent=2, sort_keys=True)
-        print("re-recorded %d hashes - re-run tools/crossvalidate.py to justify it" % len(recorded))
+        print("re-recorded %d local hashes - re-run tools/crossvalidate.py to justify it"
+              % len(files))
         return 0
 
-    print("checking %d extracted files against atlas/PROVENANCE.json" % len(recorded))
-    for f, want in sorted(recorded.items()):
+    print("checking %d extracted files against atlas/PROVENANCE.json" % len(files))
+    clean = patched = 0
+    for f, rec in sorted(files.items()):
         p = os.path.join(ROOT, "atlas", f)
         if not os.path.exists(p):
-            print("  MISSING  %s" % f)
+            print("  MISSING   %s" % f)
             rc = 1
             continue
         got = sha256(p)
-        if got != want:
-            print("  EDITED   %s" % f)
-            print("           recorded %s" % want[:16])
-            print("           on disk  %s" % got[:16])
+        if got != rec["local"]:
+            print("  EDITED    %s  (undeclared change)" % f)
+            print("            recorded local %s" % rec["local"][:16])
+            print("            on disk        %s" % got[:16])
             rc = 1
+        elif rec["local"] != rec["upstream"]:
+            if f not in patches:
+                print("  UNDECLARED PATCH  %s differs from upstream with no entry in `patches`" % f)
+                rc = 1
+            else:
+                patched += 1
+        else:
+            clean += 1
 
     if rc == 0:
-        print("  all files match the extraction from %s@%s"
-              % (manifest["source_repo"], manifest["source_commit"][:12]))
+        print("  %d file(s) byte-identical to %s@%s"
+              % (clean, manifest["source_repo"], manifest["source_commit"][:12]))
+        for f in sorted(patches):
+            print("  1 declared patch: %s" % f)
+            print("      %s" % patches[f])
 
     if a.vs_phm:
         src = os.path.join(PHM, manifest["source_path"])
-        print("\ncomparing against %s" % src)
+        print("\nchecking upstream for drift: %s" % src)
         if not os.path.isdir(src):
-            print("  pipeline repo not found - skipping drift check (set PHM_ROOT)")
+            print("  pipeline repo not found - skipping (set PHM_ROOT)")
             return rc
         drift = 0
-        for f in sorted(recorded):
+        for f, rec in sorted(files.items()):
             up = os.path.join(src, f)
             if not os.path.exists(up):
                 print("  gone upstream: %s" % f)
                 drift += 1
-            elif sha256(up) != recorded[f]:
-                print("  DRIFTED: %s has changed upstream since extraction" % f)
+            elif sha256(up) != rec["upstream"]:
+                print("  DRIFTED: %s changed upstream since extraction" % f)
                 drift += 1
         if drift:
-            print("\n%d file(s) drifted. Refresh the copy, re-run crossvalidate.py, then --update." % drift)
+            print("\n%d file(s) drifted. Refresh, re-run crossvalidate.py, then --update." % drift)
             rc = 1
         else:
             print("  no drift: the extraction is current")

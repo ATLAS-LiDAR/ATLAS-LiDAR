@@ -14,9 +14,9 @@ requires-python = ">=3.8"
 dependencies = ["numpy>=1.20"]
 
 [project.optional-dependencies]
-# removal.py imports matplotlib and plotly at module level for its plotting
-# helpers, so importing it currently REQUIRES this extra even though the physics
-# does not use them. Installing it is the workaround until that import is made lazy.
+# Nothing in atlas/ needs these any more - the three plotting imports in removal.py
+# were dead and were removed (see atlas/PROVENANCE.md). Kept as an extra only for
+# the pipeline repo's plotting scripts, which are not shipped here.
 plot = ["matplotlib", "plotly"]
 
 [tool.setuptools]
