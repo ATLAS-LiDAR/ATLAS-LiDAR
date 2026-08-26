@@ -1,9 +1,34 @@
-# ATLAS-Sandbox
+# ATLAS
 
-An interactive visualizer for the ATLAS LiDAR spoofing attack, running on real
-recorded driving frames.
+A LiDAR spoofing attack, and an interactive sandbox for it.
 
-## Versions
+Two halves, in one repository on purpose:
+
+| | | |
+|---|---|---|
+| **`atlas/`** | the attack | The reference implementation: A-HFR sector removal and trace-based injection. ~1,400 lines, **numpy only** - no torch, no CUDA, no OpenPCDet, no checkpoints. `pip install -e .` |
+| **everything else** | the sandbox | An interactive visualizer for it, running on real recorded driving frames. No build step, no Node. |
+
+They live together because that is what makes the fidelity claim checkable. The
+sandbox is a JavaScript port of `atlas/`, and `tools/crossvalidate.py` runs both on
+identical input and compares integer outcomes: **129 of 129 configurations agree
+exactly**. With the two halves in separate repos that check needed a sibling clone
+and a specific conda env, so it only ever ran on one machine. Here it runs in CI.
+
+`atlas/` was copied byte for byte out of the paper's pipeline repository, and
+`atlas/PROVENANCE.json` pins a hash for every file, so agreeing with it is still
+transitively agreeing with the published implementation rather than with a local
+edit. See [atlas/PROVENANCE.md](atlas/PROVENANCE.md).
+
+## What is not here
+
+Generating the full attacked datasets and scoring them against real detectors needs
+OpenPCDet, torch, trained checkpoints and the raw KITTI/nuScenes archives. That half
+stays in the paper's pipeline repo. The sandbox writes `.atlasattack` bundles and
+`tools/import_attack.py` converts them into what the detectors eat, so the round
+trip works - it just needs that setup locally.
+
+## Sandbox versions
 
 | | | |
 |---|---|---|
@@ -18,11 +43,19 @@ documents it rather than quietly tidying it up.
 
 ## Running it
 
-No build step and no Node required - native ES modules over any static server:
+**The sandbox** needs no build step and no Node - native ES modules over any
+static server:
 
 ```sh
 python3 -m http.server 8080
 # open http://127.0.0.1:8080/index.html
+```
+
+**The attack** is a normal Python package, numpy and nothing else:
+
+```sh
+pip install -e .
+python3 -c "from atlas import removal; print(removal.spoof_frame_ahfr_roadside)"
 ```
 
 A configuration is shareable, and headless-drivable, through the URL:
@@ -288,14 +321,22 @@ would not generate. Leaving it off is what makes this a visualizer *of ATLAS*.
 ## Tests
 
 There is no JS runtime on this machine, so the suite runs in headless Chrome and
-reports through the DOM. 416 tests, exit code 0 on green:
+reports through the DOM. 451 tests, exit code 0 on green:
 
 ```sh
-./run-tests.sh
+./run-tests.sh                        # 451 unit tests
+python3 tools/crossvalidate.py        # 129 configs vs ATLAS's own functions
+python3 tools/check_provenance.py     # atlas/ is unmodified
+bash tools/smoke.sh "" "mode=remove"  # UI loads without console errors
 ```
 
 Verified in both directions — a deliberately failing test reports red and exits
 nonzero (see the tripwire procedure in `test/harness.selftest.js`).
+
+All four run in CI (`.github/workflows/ci.yml`) on numpy plus the runner's Chrome:
+no conda env, no GPU, no raw datasets. That is what extracting `atlas/` into this
+repo bought. The provenance check runs *before* cross-validation deliberately — a
+129/129 against an edited reference implementation would be worthless.
 
 ## Architecture
 
@@ -339,7 +380,7 @@ assets/       frames/ (5 static frames) + traces/ (6 trace libraries)
 
 Numbers are generated, not transcribed: `tools/gen_sensor_assets.py` emits beam
 inclinations and intensity statistics from the same `.npy` assets
-`atlas_generation/*_atlas_common.py` loads, with source SHAs in the file header.
+`atlas/*_atlas_common.py` loads, with source SHAs in the file header.
 
 ## How the added physics works
 
@@ -473,5 +514,7 @@ stride inferred and flagged when genuinely ambiguous.
 - Cao et al., *You Can't See Me: Physical Removal Attacks on LiDAR-based
   Autonomous Vehicles Driving Frameworks*, USENIX Security 2023
   (arXiv:2210.09482) — the real capture all calibration anchors come from.
-- `Polar-Hierarchical-Mamba/ATLAS_REAL_WORLD_VALIDATION.md`,
-  `atlas_generation/nuscenes_atlas_common.py`, `osf_k6nf2/realizability.py`.
+- `atlas/nuscenes_atlas_common.py` and `atlas/removal.py` (in this repo; see
+  [atlas/PROVENANCE.md](atlas/PROVENANCE.md)). For the evaluation half:
+  `Polar-Hierarchical-Mamba/ATLAS_REAL_WORLD_VALIDATION.md` and
+  `osf_k6nf2/realizability.py` in the pipeline repo.

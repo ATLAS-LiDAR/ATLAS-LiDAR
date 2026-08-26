@@ -1,0 +1,57 @@
+name: ci
+
+# The point of extracting ATLAS into this repo was to make its fidelity check
+# runnable here. Cross-validation needs numpy and a headless browser - no conda
+# env, no GPU, no raw KITTI/nuScenes archives - because the reference
+# implementation lives in atlas/ and the frames it runs on are committed assets.
+#
+# Not covered, by nature: regenerating assets from the raw datasets
+# (tools/export_{frames,sequence,traces}.py) and scoring against real detectors
+# (tools/run_eval.sh). Those need the datasets, OpenPCDet and a GPU.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install numpy
+        run: pip install "numpy>=1.20"
+
+      # Cross-validation only means something if atlas/ is unmodified, so check
+      # that first and fail loudly rather than reporting a hollow 129/129.
+      - name: Verify the ATLAS extraction is unmodified
+        run: python3 tools/check_provenance.py
+
+      - name: Confirm ATLAS imports with numpy alone
+        run: |
+          python3 -c "
+          import sys; sys.path.insert(0, 'atlas')
+          import removal, kitti_atlas_common, nuscenes_atlas_common
+          print('ATLAS imports cleanly with numpy alone')"
+
+      - name: Unit tests (headless Chrome)
+        run: ./run-tests.sh
+
+      - name: Cross-validate the sandbox against ATLAS's own functions
+        run: python3 tools/crossvalidate.py
+
+      - name: Smoke-test the UI for console errors
+        run: |
+          bash tools/smoke.sh "" \
+            "scene=kitti-open-road" \
+            "mode=remove&forceActive=1&azWidth=30" \
+            "scene=nuscenes-scene0&placement=global&attacker=static" \
+            "scene=nuscenes-scene0&schedule=intermittent&frame=25" \
+            "attacker=dynamic&producible=1&spin=1" \
+            "producible=0&overlay=1&frame=3"
