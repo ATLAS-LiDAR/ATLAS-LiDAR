@@ -4,13 +4,13 @@
  *
  * Beam inclinations, azimuth resolution and range-conditioned intensity
  * statistics measured from the real datasets, emitted from the same .npy assets
- * that atlas_generation/*_atlas_common.py loads. Sources:
- *   atlas_generation/nuscenes_beam_inclinations.npy  sha256:2460e5d5
- *   atlas_generation/nuscenes_azimuth_res.npy  sha256:e9fa4eff
- *   atlas_generation/nuscenes_range_conditioned_stats.npy  sha256:dde98850
- *   atlas_generation/assets_kitti/kitti_beam_inclinations.npy  sha256:37899d3a
- *   atlas_generation/assets_kitti/kitti_azimuth_res.npy  sha256:56f4f685
- *   atlas_generation/assets_kitti/kitti_range_conditioned_stats.npy  sha256:aab014ec
+ * that atlas/*_atlas_common.py loads. Sources:
+ *   atlas/nuscenes_beam_inclinations.npy  sha256:2460e5d5
+ *   atlas/nuscenes_azimuth_res.npy  sha256:e9fa4eff
+ *   atlas/nuscenes_range_conditioned_stats.npy  sha256:dde98850
+ *   atlas/assets_kitti/kitti_beam_inclinations.npy  sha256:37899d3a
+ *   atlas/assets_kitti/kitti_azimuth_res.npy  sha256:56f4f685
+ *   atlas/assets_kitti/kitti_range_conditioned_stats.npy  sha256:aab014ec
  *
  * `provenance: "measured"` means the inclinations were fitted from real dataset
  * returns. `"nominal"` means they are datasheet values expanded uniformly across

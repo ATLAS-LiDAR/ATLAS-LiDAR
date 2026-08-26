@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Generate src/core/sensor-assets.js from the ATLAS generation assets.
 
-The sandbox must agree numerically with the ATLAS pipeline, so beam
-inclinations, azimuth resolution and the range-conditioned intensity statistics
-are emitted from the same .npy files the generator loads rather than being
-transcribed by hand.
+The sandbox must agree numerically with ATLAS, so beam inclinations, azimuth
+resolution and the range-conditioned intensity statistics are emitted from the same
+.npy files ATLAS itself loads rather than being transcribed by hand.
+
+Those assets ship in atlas/ (24 kB), so this needs no external checkout. Note that
+atlas/assets_trainval/ holds a DIFFERENT nuScenes calibration, measured over the
+full trainval split; --atlas can point there instead, but the two are not
+interchangeable (see atlas/PROVENANCE.md).
 
 Usage:
-  python3 tools/gen_sensor_assets.py [--phm /path/to/Polar-Hierarchical-Mamba]
+  python3 tools/gen_sensor_assets.py [--atlas atlas]
 """
 import argparse
 import hashlib
@@ -15,7 +19,9 @@ import os
 
 import numpy as np
 
-DEFAULT_PHM = os.path.expanduser("~/rsch/Polar-Hierarchical-Mamba")
+# the calibration .npy files ship in this repo now (atlas/, 24 kB), so regenerating
+# the JS constants needs no external checkout
+DEFAULT_ATLAS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "atlas")
 
 
 def sha8(path):
@@ -67,11 +73,12 @@ def js_bands(bands, indent=6):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--phm", default=DEFAULT_PHM)
+    ap.add_argument("--atlas", default=DEFAULT_ATLAS,
+                    help="directory holding ATLAS's calibration .npy files")
     ap.add_argument("--out", default="src/core/sensor-assets.js")
     a = ap.parse_args()
 
-    gen = os.path.join(a.phm, "atlas_generation")
+    gen = a.atlas
     src = {
         "nuscenes": dict(
             inc=os.path.join(gen, "nuscenes_beam_inclinations.npy"),
@@ -101,7 +108,7 @@ def main():
     for tag, paths in src.items():
         for k in ("inc", "az", "st"):
             p = paths[k]
-            prov.append(f" *   {os.path.relpath(p, a.phm)}  sha256:{sha8(p)}")
+            prov.append(f" *   atlas/{os.path.relpath(p, a.atlas)}  sha256:{sha8(p)}")
     prov = "\n".join(prov)
 
     body = f"""/**
@@ -110,7 +117,7 @@ def main():
  *
  * Beam inclinations, azimuth resolution and range-conditioned intensity
  * statistics measured from the real datasets, emitted from the same .npy assets
- * that atlas_generation/*_atlas_common.py loads. Sources:
+ * that atlas/*_atlas_common.py loads. Sources:
 {prov}
  *
  * `provenance: "measured"` means the inclinations were fitted from real dataset

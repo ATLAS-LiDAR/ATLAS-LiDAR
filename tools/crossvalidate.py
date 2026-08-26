@@ -43,8 +43,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # the widths ATLAS tabulates a removal probability for
 ATLAS_AZ_WIDTHS = (10, 20, 30, 40, 50, 60)
-PHM = os.environ.get("PHM_ROOT", os.path.expanduser("~/rsch/Polar-Hierarchical-Mamba"))
-sys.path.insert(0, os.path.join(PHM, "atlas_generation"))
+# ATLAS now lives in this repo, so this needs no sibling clone, no conda env and no
+# raw datasets - only numpy. That is what makes it runnable in CI. The copy is
+# pinned by atlas/PROVENANCE.json (tools/check_provenance.py), so comparing against
+# it is still transitively a comparison against the published implementation.
+sys.path.insert(0, os.path.join(ROOT, "atlas"))
 
 
 def _stub_plotting():

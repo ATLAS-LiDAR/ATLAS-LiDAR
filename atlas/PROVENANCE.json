@@ -1,0 +1,20 @@
+{
+  "files": {
+    "assets_kitti/kitti_azimuth_res.npy": "56f4f68557200863aa7389a6d2cb7585ba2a68933812e505254e1d8857f0e39e",
+    "assets_kitti/kitti_beam_inclinations.npy": "37899d3a828b07b266d72abd74ab7453db4b59dcdb5aa9d832aa96dbce7589cb",
+    "assets_kitti/kitti_range_conditioned_stats.npy": "aab014ec67b2a1c91448fb1996ac91be6f211311926edabd78de2021a85762ed",
+    "assets_trainval/nuscenes_azimuth_res.npy": "192c4ccff173013a6c9f658c32b2acd2ee4370d9aade86d42e26afb9d55c90e9",
+    "assets_trainval/nuscenes_beam_inclinations.npy": "8960ca7cd1d7aec8d12171fddaaf5e3c8bfd1c206f7fc38dda1a1b071f71abc9",
+    "assets_trainval/nuscenes_range_conditioned_stats.npy": "9f4f4eddfced7b9acd219a12144ef5b38db4fc6b51e17445d881284f0f389f0d",
+    "kitti_atlas_common.py": "8184d3dd0304b6b17bfc585608edff6039f77eb4bcbae924870211c75088b5d9",
+    "nuscenes_atlas_common.py": "95a212a42614b7fbd3474c3ad88245caca40db6aaec0a3ab287c5ab0b6bbb08d",
+    "nuscenes_azimuth_res.npy": "e9fa4effd6df6fef2c6f4eb0562e93869a33e39e3a6d817bf0d24660fff55fee",
+    "nuscenes_beam_inclinations.npy": "2460e5d598360751ff890a7eb62259947e9503e3453944600632a5443ad14a2d",
+    "nuscenes_range_conditioned_stats.npy": "dde9885079f830ebd320efb7fbc5166cc162e5601f64b5dcaf9831f834b2f789",
+    "removal.py": "3d8888533ec0cab24eb5dc4839b8e4df375a513b88dc3b277f24c75ee9c277ec"
+  },
+  "last_commit_touching_core": "114e21d777319ac0c75a2b22d16b33c1066392bd",
+  "source_commit": "0a4a98e1c3fc22f8d664e0fe27fa0ef2235e7d15",
+  "source_path": "atlas_generation/",
+  "source_repo": "Polar-Hierarchical-Mamba"
+}
