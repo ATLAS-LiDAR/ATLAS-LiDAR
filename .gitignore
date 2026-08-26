@@ -1,19 +1,43 @@
-
-#
-# assets/frames/*.atlasframe
-# assets/frames/*.atlasframe IS committed so the sandbox runs from a fresh
-# below and rely on tools/export_frames.py to regenerate them locally.
-# checkout without needing the datasets mounted (~3.5 MB total).
-.chrome-profile/
 # Chrome/test scratch
-.DS_Store
-# Editor
-# NOTE ON THE EXPORTED FRAMES
-*.pyc
-__pycache__/
-# Python
-# redistribution of derived point clouds is permitted or uncomment the line
-# restrict redistribution. BEFORE PUSHING THIS ANYWHERE PUBLIC, either confirm
-*.swp
-# Those files are derived from KITTI (CC BY-NC-SA) and nuScenes, whose terms
+.chrome-profile/
 /tmp/
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor
+.DS_Store
+*.swp
+
+# NOTE ON THE EXPORTED FRAMES
+# assets/frames/*.atlasframe IS committed so the sandbox runs from a fresh
+# checkout without needing the datasets mounted (~3.5 MB total).
+#
+# Those files are derived from KITTI (CC BY-NC-SA) and nuScenes, whose terms
+# restrict redistribution. BEFORE PUSHING THIS ANYWHERE PUBLIC, either confirm
+# redistribution of derived point clouds is permitted or uncomment the line
+# below and rely on tools/export_frames.py to regenerate them locally.
+# assets/frames/*.atlasframe
+
+# THE INJECTION TRACES ARE NOT COMMITTED
+# atlas/trace_*.pkl and the per-dataset copies are the extracted vehicle point
+# clouds ATLAS injects - 159 MB, one file at 97 MiB, near GitHub's per-file
+# ceiling. They were never committed in the pipeline repo either. Regenerate
+# with atlas/build_nuscenes_assets.py / atlas/build_kitti_assets.py, which need
+# the raw dataset archives and OpenPCDet.
+trace_*.pkl
+
+# THE OSF k6nf2 RAW CAPTURES ARE NOT COMMITTED
+# validation/osf_k6nf2/ ships the analysis scripts and the small real_*.npz
+# summaries they produce. The source captures (375 MB of PCAP, 67 MB of
+# multimode analysis, from a 2.5 GB archive) come from OSF deposit k6nf2 -
+# see validation/osf_k6nf2/README.md for what to download and where to put it.
+validation/osf_k6nf2/Moving Target Experiment PCAP file/
+validation/osf_k6nf2/Multimode Analysis/
+validation/osf_k6nf2/*.pcap
+
+# Generated attack data and eval output
+eval/output/
+eval/*.pkl
+results/*_cache/

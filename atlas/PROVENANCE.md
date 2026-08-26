@@ -84,14 +84,53 @@ that wants trainval-scale statistics should set `NUSCENES_ATLAS_ASSET_DIR` to
 This is a scoping fact, not a defect. It is written down because nothing in the file
 names hints that the two sets disagree.
 
-## What deliberately did not come along
+## The rest of the harness came over too, on a second pass
 
-- **`trace_*.pkl`** — the extracted vehicle point clouds ATLAS injects, 159 MB
-  across both datasets, with a single 97 MB file that is essentially at GitHub's
-  100 MB per-file ceiling. The sandbox consumes the derived `.atlastrace` files in
-  `assets/traces/` instead (6 MB). Regenerating those with
-  `tools/export_traces.py` needs the pickles, so it stays a local-only tool.
-- **`generate_data_*.py`, `point_injection*.py`, `eval_matrix_*.py`,
-  `helpers_ptt.py`** — dataset generation, detector evaluation and plotting. These
-  need OpenPCDet, torch, trained checkpoints and the raw dataset archives, and they
-  stay in the pipeline repo. `.atlasattack` bundles are the interchange format.
+The first extraction took only the attack's physics, on the theory that anything
+needing torch or OpenPCDet belonged in the pipeline repo. That boundary was redrawn:
+the pipeline repo is for **LiDAR perception models**, and everything needed to
+*generate* ATLAS data and *evaluate* on it belongs here. So the following also came
+across verbatim, and `PROVENANCE.json` records a hash for each under `mirrors`:
+
+| where it lives now | what it is | came from |
+|---|---|---|
+| `atlas/generate_data_*.py` (7) | dataset generation — Waymo, nuScenes, KITTI | `atlas_generation/` |
+| `atlas/build_*_assets.py` | the calibration measurement that produced the `.npy` files above | `atlas_generation/` |
+| `atlas/helpers_ptt.py` | geometry and plotting helpers the generators import | `atlas_generation/` |
+| `atlas/export_*_hf.py`, `add_croissant_rai.py` | HuggingFace dataset export | `atlas_generation/` |
+| `eval/` | detector evaluation, ablations, qualitative figures | repo root |
+| `eval/cfgs/` | the three dataset configs added for ATLAS generation | `tools/cfgs/dataset_configs/` |
+| `validation/osf_k6nf2/` | real-world fidelity validation against OSF deposit k6nf2 | `osf_k6nf2/` |
+| `results/` | `ATLAS_RESULTS.md`, `ATLAS_REAL_WORLD_VALIDATION.md`, `SUMMARY.md`, `rebuttal.md`, the metrics PDF and the BEV figures | repo root |
+
+These are flat in `atlas/` rather than a subdirectory on purpose: the generators use
+sibling imports (`import nuscenes_atlas_common as C`, `import helpers_ptt`), so a flat
+mirror of `atlas_generation/` is what lets them stay byte-identical instead of being
+rewritten on the way in. `eval/atlas_generation` is a symlink to `../atlas` for the
+same reason.
+
+Note the tier difference. The files in `PROVENANCE.json`'s `files` map are the attack
+itself and are what `tools/crossvalidate.py` checks against — an undeclared edit there
+invalidates 129/129. The `mirrors` entries get one hash each; a mismatch there means
+the two copies have diverged and want reconciling, not that the fidelity number is
+suspect.
+
+## What still did not come along
+
+- **`trace_*.pkl`** — the extracted vehicle point clouds ATLAS injects, 159 MB across
+  the three asset directories, with a single file at 97 MiB, near GitHub's per-file
+  ceiling. They are **present on disk** so generation runs immediately, but
+  gitignored — which is also their status in the pipeline repo, where they were never
+  committed either. Regenerate with `build_nuscenes_assets.py` /
+  `build_kitti_assets.py`. The sandbox itself does not need them: it consumes the
+  derived `.atlastrace` files in `assets/traces/` (6 MB), and only
+  `tools/export_traces.py` reads the pickles.
+- **The OSF k6nf2 raw captures** — 375 MB of PCAP and 67 MB of multimode analysis out
+  of a 2.5 GB archive. `validation/osf_k6nf2/` ships the analysis scripts and the
+  small `real_*.npz` summaries they produce; the captures come from the OSF deposit.
+- **`pcdet/`, `mamba/`, `tools/train.py`, the Waymo model configs, `docker/`,
+  `docs/`** — the perception models and their training infrastructure. That is the
+  pipeline repo's job. The one exception is documented in
+  `eval/pcdet-patches/waymo_dataset-atlas-asr.patch`: ATLAS's per-frame ASR scorer
+  lives inside `WaymoDataset.evaluation()` and cannot be lifted out, so it stays
+  there and is recorded here as a required patch.

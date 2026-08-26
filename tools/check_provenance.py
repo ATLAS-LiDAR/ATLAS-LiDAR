@@ -29,6 +29,18 @@ means re-running cross-validation, not just re-recording a hash.
 Editing atlas/ is not forbidden; it is how upstream fixes and patches land. But it
 must be deliberate: change the file, re-run tools/crossvalidate.py, declare the
 reason in `patches` if it is a local deviation, then --update.
+
+TWO TIERS, DELIBERATELY
+`files` is the attack itself - removal.py, the two *_atlas_common.py modules, the
+calibration assets. Those are what tools/crossvalidate.py compares against, so an
+undeclared edit there invalidates the 129/129 claim outright. They get the strict
+two-hash treatment (upstream vs local, with declared patches).
+
+`mirrors` is the surrounding harness copied over from the pipeline repo: dataset
+generation, the detector evaluation matrix, real-world validation against OSF k6nf2,
+and the result writeups. A single hash each, because a difference there is a
+maintenance problem - the copies have diverged and someone should reconcile them -
+not a reason to distrust the fidelity number.
 """
 import argparse
 import hashlib
@@ -59,12 +71,19 @@ def main():
     patches = manifest.get("patches", {})
     rc = 0
 
+    mirrors = manifest.get("mirrors", [])
+
     if a.update:
         for f, rec in files.items():
             rec["local"] = sha256(os.path.join(ROOT, "atlas", f))
+        n = 0
+        for group in mirrors:
+            for name in group["files"]:
+                group["files"][name] = sha256(os.path.join(ROOT, group["local_dir"], name))
+                n += 1
         json.dump(manifest, open(MANIFEST, "w"), indent=2, sort_keys=True)
-        print("re-recorded %d local hashes - re-run tools/crossvalidate.py to justify it"
-              % len(files))
+        print("re-recorded %d core + %d mirrored hashes - re-run tools/crossvalidate.py"
+              " to justify it" % (len(files), n))
         return 0
 
     print("checking %d extracted files against atlas/PROVENANCE.json" % len(files))
@@ -108,6 +127,29 @@ def main():
             print("      Not reproducible from the pipeline repo's history until"
                   " those changes are committed there.")
 
+    # The harness mirrored out of the pipeline repo: generation, evaluation,
+    # real-world validation, writeups. One hash each - see TWO TIERS above.
+    if mirrors:
+        total = sum(len(g["files"]) for g in mirrors)
+        print("\nchecking %d mirrored harness file(s) across %d group(s)"
+              % (total, len(mirrors)))
+        for group in mirrors:
+            edited = missing = 0
+            for name, want in sorted(group["files"].items()):
+                p = os.path.join(ROOT, group["local_dir"], name)
+                if not os.path.exists(p):
+                    print("  MISSING   %s/%s" % (group["local_dir"], name))
+                    missing += 1
+                elif sha256(p) != want:
+                    print("  EDITED    %s/%s" % (group["local_dir"], name))
+                    edited += 1
+            if edited or missing:
+                rc = 1
+            else:
+                print("  %-26s %2d file(s) intact  (from %s/%s)"
+                      % (group["local_dir"], len(group["files"]),
+                         manifest["source_repo"], group["upstream_dir"].rstrip("/.")))
+
     if a.vs_phm:
         src = os.path.join(PHM, manifest["source_path"])
         print("\nchecking upstream for drift: %s" % src)
@@ -123,6 +165,15 @@ def main():
             elif sha256(up) != rec["upstream"]:
                 print("  DRIFTED: %s changed upstream since extraction" % f)
                 drift += 1
+        for group in mirrors:
+            for name, want in sorted(group["files"].items()):
+                up = os.path.join(PHM, group["upstream_dir"], name)
+                if not os.path.exists(up):
+                    print("  gone upstream: %s/%s" % (group["upstream_dir"], name))
+                    drift += 1
+                elif sha256(up) != want:
+                    print("  DRIFTED: %s/%s changed upstream" % (group["upstream_dir"], name))
+                    drift += 1
         if drift:
             print("\n%d file(s) drifted. Refresh, re-run crossvalidate.py, then --update." % drift)
             rc = 1

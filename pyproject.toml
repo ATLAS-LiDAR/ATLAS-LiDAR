@@ -14,10 +14,22 @@ requires-python = ">=3.8"
 dependencies = ["numpy>=1.20"]
 
 [project.optional-dependencies]
-# Nothing in atlas/ needs these any more - the three plotting imports in removal.py
-# were dead and were removed (see atlas/PROVENANCE.md). Kept as an extra only for
-# the pipeline repo's plotting scripts, which are not shipped here.
+# The attack's physics needs none of these. They are what the surrounding harness
+# needs, and they are extras precisely so that `pip install atlas-lidar` keeps
+# giving you a numpy-only attack.
+#
+# gen   dataset generation (atlas/generate_data_*.py, atlas/build_*_assets.py).
+#       helpers_ptt.py pulls in torch and the plotting stack at module scope, and
+#       the generators import pcdet lazily inside their data loaders.
+# eval  the detector evaluation matrix (eval/). Beyond these, it needs OpenPCDet
+#       and trained checkpoints, which is why it depends on a
+#       Polar-Hierarchical-Mamba checkout rather than on a PyPI package - see
+#       eval/README.md.
+# viz   real-world validation plots and the qualitative figures.
 plot = ["matplotlib", "plotly"]
+gen = ["torch", "tqdm", "matplotlib", "plotly", "easydict", "pyyaml"]
+eval = ["torch", "tqdm", "scipy", "easydict", "pyyaml"]
+viz = ["matplotlib", "plotly", "scipy"]
 
 [tool.setuptools]
 # Only the attack package is installable. The sandbox is a static web app served

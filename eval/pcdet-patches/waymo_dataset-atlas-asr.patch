@@ -1,0 +1,143 @@
+diff --git a/pcdet/datasets/waymo/waymo_dataset.py b/pcdet/datasets/waymo/waymo_dataset.py
+index fb6e611..371b7ee 100644
+--- a/pcdet/datasets/waymo/waymo_dataset.py
++++ b/pcdet/datasets/waymo/waymo_dataset.py
+@@ -18,7 +18,59 @@ from functools import partial
+ from ...ops.roiaware_pool3d import roiaware_pool3d_utils
+ from ...utils import box_utils, common_utils
+ from ..dataset import DatasetTemplate
++from pcdet.ops.iou3d_nms import iou3d_nms_utils
++# import debugpy
++def get_iou_threshold(cls_id):
++    cls_id = int(cls_id)
++    if cls_id == 1:
++        return 0.7
++    elif cls_id in [2, 3]:
++        return 0.5
++    else:
++        return None
++
++
++
++def find_best_match(spoof_gt, frame_pred):
++    cls_id = int(spoof_gt[-1])
++    thr = get_iou_threshold(cls_id)
++
++    pred_boxes = frame_pred.get('boxes_lidar', None)
++    pred_labels = np.array(frame_pred.get('pred_labels', []))
++    pred_scores = np.array(frame_pred.get('score', []))
++
++    if thr is None or pred_boxes is None or len(pred_boxes) == 0:
++        return {
++            'class_id': cls_id,
++            'threshold': thr,
++            'max_iou': 0.0,
++            'score': None
++        }
++
++    cls_mask = (pred_labels == cls_id)
++    if not np.any(cls_mask):
++        return {
++            'class_id': cls_id,
++            'threshold': thr,
++            'max_iou': 0.0,
++            'score': None
++        }
++
++    cls_boxes = pred_boxes[cls_mask]
++    cls_scores = pred_scores[cls_mask]
++
++    gt_tensor = torch.tensor(spoof_gt[:7], dtype=torch.float32).unsqueeze(0).cuda()
++    pred_tensor = torch.tensor(cls_boxes[:, :7], dtype=torch.float32).cuda()
++
++    iou = iou3d_nms_utils.boxes_iou3d_gpu(pred_tensor, gt_tensor)  # (N, 1)
++    max_iou, best_idx = iou[:, 0].max(0)
+ 
++    return {
++        'class_id': cls_id,
++        'threshold': thr,
++        'max_iou': float(max_iou.item()),
++        'score': float(cls_scores[best_idx.item()])
++    }
+ 
+ class WaymoDataset(DatasetTemplate):
+     def __init__(self, dataset_cfg, class_names, training=True, root_path=None, logger=None):
+@@ -400,7 +452,7 @@ class WaymoDataset(DatasetTemplate):
+                 'gt_names': annos['name'],
+                 'gt_boxes': gt_boxes_lidar,
+                 'num_points_in_gt': annos.get('num_points_in_gt', None),
+-                'original_boxes': gt_boxes_lidar, # PHiM: keep the original Cartesian boxes
++                'original_boxes': gt_boxes_lidar, 
+             })
+ 
+         data_dict = self.prepare_data(data_dict=input_dict)
+@@ -451,6 +503,43 @@ class WaymoDataset(DatasetTemplate):
+ 
+         eval_det_annos = copy.deepcopy(det_annos)
+         eval_gt_annos = [copy.deepcopy(info['annos']) for info in self.infos]
++        asr_records = []
++        attack_success_cnt = 0
++        frame_id_to_anno = {anno['frame_id']: anno for anno in det_annos}
++
++
++        for info in self.infos:
++            spoof_gt = info.get('spoof_gt', None)
++            if spoof_gt is None:
++                continue
++
++            fid = info['frame_id']
++            frame_pred = frame_id_to_anno.get(fid, None)
++            if frame_pred is None:
++                continue
++
++            match = find_best_match(spoof_gt, frame_pred)
++
++            cls_id = match['class_id']
++            thr = match['threshold']
++            max_iou = match['max_iou']
++            score = match['score']
++
++            attack_success = (thr is not None) and (max_iou < thr)
++
++            if attack_success:
++                attack_success_cnt += 1
++
++            asr_records.append({
++                'frame_id': fid,
++                'class_id': cls_id,
++                'threshold': thr,
++                'max_iou': max_iou,
++                'score': score,
++                'attack_success': attack_success,
++            })
++
++        asr = attack_success_cnt / len(asr_records) if len(asr_records) > 0 else None
+ 
+         if kwargs['eval_metric'] == 'kitti':
+             ap_result_str, ap_dict = kitti_eval(eval_det_annos, eval_gt_annos)
+@@ -459,7 +548,7 @@ class WaymoDataset(DatasetTemplate):
+         else:
+             raise NotImplementedError
+ 
+-        return ap_result_str, ap_dict
++        return ap_result_str, ap_dict, asr, asr_records
+ 
+     def create_groundtruth_database(self, info_path, save_path, used_classes=None, split='train', sampled_interval=10,
+                                     processed_data_tag=None):
+@@ -702,7 +791,7 @@ class WaymoDataset(DatasetTemplate):
+ 
+ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
+                        raw_data_tag='raw_data', processed_data_tag='waymo_processed_data',
+-                       workers=min(4, multiprocessing.cpu_count()), update_info_only=False):
++                       workers=min(16, multiprocessing.cpu_count()), update_info_only=False):
+     dataset = WaymoDataset(
+         dataset_cfg=dataset_cfg, class_names=class_names, root_path=data_path,
+         training=False, logger=common_utils.create_logger()
+@@ -741,7 +830,6 @@ def create_waymo_infos(dataset_cfg, class_names, data_path, save_path,
+     print('---------------Start create groundtruth database for data augmentation---------------')
+     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+     dataset.set_split(train_split)
+-    print('num workers: ', workers)
+     dataset.create_groundtruth_database(
+         info_path=train_filename, save_path=save_path, split='train', sampled_interval=1,
+         used_classes=['Vehicle', 'Pedestrian', 'Cyclist'], processed_data_tag=processed_data_tag

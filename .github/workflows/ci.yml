@@ -40,6 +40,12 @@ jobs:
           import removal, kitti_atlas_common, nuscenes_atlas_common
           print('ATLAS imports cleanly with numpy alone')"
 
+      # The generation and evaluation layers cannot be imported here - they need
+      # torch, OpenPCDet and checkpoints. Compiling them is still worth doing: it
+      # catches syntax breakage in code CI otherwise never touches at all.
+      - name: Byte-compile the generation and evaluation layers
+        run: python3 -m compileall -q atlas eval validation
+
       - name: Unit tests (headless Chrome)
         run: ./run-tests.sh
 

@@ -2,31 +2,48 @@
 
 A LiDAR spoofing attack, and an interactive sandbox for it.
 
-Two halves, in one repository on purpose:
+Everything ATLAS, in one repository on purpose:
 
 | | | |
 |---|---|---|
-| **`atlas/`** | the attack | The reference implementation: A-HFR sector removal and trace-based injection. ~1,400 lines, **numpy only** - no torch, no CUDA, no OpenPCDet, no checkpoints. `pip install -e .` |
-| **everything else** | the sandbox | An interactive visualizer for it, running on real recorded driving frames. No build step, no Node. |
+| **`atlas/`** | the attack | The reference implementation: A-HFR sector removal and trace-based injection. ~1,400 lines, **numpy only** - no torch, no CUDA, no OpenPCDet, no checkpoints. `pip install -e .` Alongside it, the dataset generators that turn Waymo/nuScenes/KITTI into attacked variants. |
+| **`eval/`** | the harness | Detector evaluation: attack success rate against clean mAP/NDS, the ablations, the qualitative figures. Needs torch and an OpenPCDet checkout - see [eval/README.md](eval/README.md). |
+| **`validation/`** | the reality check | Real-world fidelity validation against OSF deposit `k6nf2`: does ATLAS's output look like an actual spoofer's? |
+| **`results/`** | the findings | `ATLAS_RESULTS.md`, `ATLAS_REAL_WORLD_VALIDATION.md`, `SUMMARY.md`, the metrics PDF and the BEV figures. |
+| **root, `src/`, `assets/`** | the sandbox | An interactive visualizer for the attack, running on real recorded driving frames. No build step, no Node. |
 
-They live together because that is what makes the fidelity claim checkable. The
-sandbox is a JavaScript port of `atlas/`, and `tools/crossvalidate.py` runs both on
-identical input and compares integer outcomes: **129 of 129 configurations agree
-exactly**. With the two halves in separate repos that check needed a sibling clone
-and a specific conda env, so it only ever ran on one machine. Here it runs in CI.
+The split against the paper's pipeline repository is: **the attack and everything
+needed to run and score it lives here; the LiDAR perception models live there.**
+PHiM, LOT, the OpenPCDet fork, the CUDA extensions and the checkpoints stay in
+`Polar-Hierarchical-Mamba`.
 
-`atlas/` was copied byte for byte out of the paper's pipeline repository, and
-`atlas/PROVENANCE.json` pins a hash for every file, so agreeing with it is still
-transitively agreeing with the published implementation rather than with a local
-edit. See [atlas/PROVENANCE.md](atlas/PROVENANCE.md).
+The attack and the sandbox live together because that is what makes the fidelity claim
+checkable. The sandbox is a JavaScript port of `atlas/`, and `tools/crossvalidate.py`
+runs both on identical input and compares integer outcomes: **129 of 129
+configurations agree exactly**. With the two halves in separate repos that check
+needed a sibling clone and a specific conda env, so it only ever ran on one machine.
+Here it runs in CI.
+
+Every file that came from the pipeline repo was copied byte for byte, and
+`atlas/PROVENANCE.json` pins a hash for each, so agreeing with `atlas/` is still
+transitively agreeing with the published implementation rather than with a local edit.
+See [atlas/PROVENANCE.md](atlas/PROVENANCE.md).
 
 ## What is not here
 
-Generating the full attacked datasets and scoring them against real detectors needs
-OpenPCDet, torch, trained checkpoints and the raw KITTI/nuScenes archives. That half
-stays in the paper's pipeline repo. The sandbox writes `.atlasattack` bundles and
-`tools/import_attack.py` converts them into what the detectors eat, so the round
-trip works - it just needs that setup locally.
+The detectors themselves. `eval/` scores ATLAS against OpenPCDet models, which means it
+needs a `Polar-Hierarchical-Mamba` checkout for `pcdet`, plus trained checkpoints and
+the raw KITTI/nuScenes archives - it is an optional extra (`pip install -e '.[eval]'`),
+deliberately, so that the attack itself stays installable on numpy alone.
+
+Two large artifacts are present on disk but gitignored: the `trace_*.pkl` injection
+sources (159 MB, regenerate with `atlas/build_*_assets.py`) and the OSF k6nf2 raw
+captures. And one piece of ATLAS's own code cannot live here - the per-frame ASR scorer
+inside `WaymoDataset.evaluation()` - so it is recorded as a patch at
+`eval/pcdet-patches/waymo_dataset-atlas-asr.patch`.
+
+The sandbox writes `.atlasattack` bundles and `tools/import_attack.py` converts them
+into what the detectors eat, so the round trip works.
 
 ## Sandbox versions
 

@@ -50,6 +50,108 @@
     }
   },
   "head_commit_at_extraction": "0a4a98e1c3fc22f8d664e0fe27fa0ef2235e7d15",
+  "mirrors": [
+    {
+      "files": {
+        "add_croissant_rai.py": "8fb1f68a341d4dc2427a98eac9766908e7237dd9c307b8b2c7616ed04c3345d9",
+        "build_kitti_assets.py": "34d6dd6b240725abb0bda1980a2cf72c435b05b4d17013605e74f67f44ed004d",
+        "build_nuscenes_assets.py": "614f314a0d48e41146301c1b1c64bd987e93b1cb3cb4a0aecde282887b05f606",
+        "export_kitti_hf.py": "3c151c65be1a71bd490ca5cac7701b18240ea36d2de5bdaed08d48f88b9917aa",
+        "export_nuscenes_hf.py": "9307a03e4e6f325498f9a3814b220163f2b049e6c97ba7b08b14ba2de3d998be",
+        "generate_data_global.py": "8a1c8902451ce971e73fbce70002578938d7a5b1f38717a6e0c0b0670dbf668c",
+        "generate_data_global_nuscenes.py": "3492c2ae5a350532724cf22c087184a69595171417de0c51c4d58debd70836b4",
+        "generate_data_kitti.py": "f2af389971812aea49666a98b141d4f6b14d4ecfb317871a15c2814c34646e45",
+        "generate_data_relative.py": "951c199c09ab4194d2bfceb1770e806bbd58e0aea21d06b5b4fe939e1b35eff2",
+        "generate_data_relative_nuscenes.py": "cfb3724c18446b59fcaf149837b4428555c2c28dc3ec902a8eb534193cc1611b",
+        "generate_data_removal.py": "b062d2f7b2a4274bf9135fe334b5f56b17e096883c0bbcaa2dace47b588043c1",
+        "generate_data_removal_nuscenes.py": "b42a2bd0a78830fa98468540be39eaa786e68e116187b9f78204051f39ae88ca",
+        "helpers_ptt.py": "99bbd397d7859b0feeab1afadfcb573a1cc89162d5bbf20ad26525d000e2abbb",
+        "regen_v1_removal.sh": "95b7e887de44c18dae28d5655034ba049209d6ada1f0056c6fb82068fa1bc67f",
+        "run_all_variants_trainval.sh": "f43afa3685921c4de2afe453a496f0b417b347c4292d1c0297b8febf6cf5cea4",
+        "run_sched_variants.sh": "72f04d0c19c829328af5a4a49527ca6a8db15553b5c1bf6d5eca46a9af6e02ba"
+      },
+      "local_dir": "atlas",
+      "upstream_dir": "atlas_generation"
+    },
+    {
+      "files": {
+        "ablate_intensity_nuscenes.py": "742626172b028ec0b81d83f05d92ce5c7a7e83a3262253bffd1c27be571f5bfc",
+        "analyze_schedule_variants.py": "a4b95298a3536db285937cdff8b0b80ca51906e4092afa59e15c71f195419333",
+        "atlas_injection_eval_only.py": "b43b53111977175ed2b0f7b624042cba6f5ecdd52181c222e7ed4b59b2433cdb",
+        "cache_injection_preds.py": "9ffebbdeea6858597c6b76c50e1c3ee9632eec85af7758adbbccd9ca3c6df769",
+        "eval_matrix_kitti.py": "41ea5a4071549784c39e89e65ba03e0b274fc5c4610bf9c83d23f18dccd4edb9",
+        "eval_matrix_nuscenes.py": "0f29a07d0963384c3b2c2fb9743d8fcc12b1f85ce49317f78e510287c5258222",
+        "make_qualitative_figs.py": "2a96986961bfa174ebbed97dce783b27f0571170509252c2bef85d482914c67e",
+        "point_injection.py": "4fd15a308bdeb22c5467b4587a1d7cc375210fdb56812d53106f05b62ba562e8",
+        "point_injection_nuscenes.py": "ae61187067fd301d9e54cc44393257c70ca51f35f3655c205bf9b2865218b044",
+        "run_ablate_intensity.sh": "d07a715974abb28025a987384ea16d09d80c66a8c53a87412e859b596e2c0986",
+        "run_ablate_sweep.sh": "4dc099b22f9c4a0e0316a3834e927729bcc5bd703e1a4a57c3cc97f05e0fa5af",
+        "run_kitti_eval.sh": "300ae5293de98a8ed0097baa2667c76b980f4fe6b4c2991d98950ba3694f349d",
+        "run_kitti_pointrcnn.sh": "e0948cee1be3976708ea3ca063fdf9898c8615993608ec08f17f9f5e3e3037b2",
+        "run_sched_eval.sh": "19d2ad554f96b581af9e7284e63f8700e1feb0c22e4cb63c7440337488222b2b"
+      },
+      "local_dir": "eval",
+      "upstream_dir": "."
+    },
+    {
+      "files": {
+        "kitti_dataset_gen.yaml": "39d567c090a3c11bdde464d7644ebf0fce0ed70d5b0f66ebf1cb3ea3c1e9af4d",
+        "nuscenes_dataset_mini.yaml": "e9ee35f09f95300c97c9ab5d6270cb1adc2be18e21bdda043759c71e99f1a89f",
+        "nuscenes_dataset_trainval_gen.yaml": "f711d7889cec8d717ed05102f92fec5d83bb5536acd1e00097f57c9ff43506eb"
+      },
+      "local_dir": "eval/cfgs",
+      "upstream_dir": "tools/cfgs/dataset_configs"
+    },
+    {
+      "files": {
+        "README.md": "78f06653e13d8f9ef21b02e6ddd20bd54070a23db2362f0c723399e684d6bf07",
+        "cell_occupancy.py": "7b6e1bee145a49070fea7ca2b7131cd6116180c0faef495f446e06e91304f997",
+        "compare_real_vs_atlas.py": "661d2fcb603b09f3d321127b4edce2690843c34ea45d2095b98c0e8bb2ddab21",
+        "compare_removal.py": "64273e081bb102d1c8b3597a01e0bab1ee053b73551088ab2a8698fe1b441392",
+        "extract_removal_real.py": "c24d1c39cd97c5993f0abbd0f92366559d38370191ad476c07ef6b23b8beaf90",
+        "extract_spoof_real.py": "d1c07717b8ff061b2e0e3ba0a5de85d5ec6ad493f42e01dc29ad6768e2fe3804",
+        "fill_generated.py": "a083d893ddf08144fb6785411b25b6b3514bac01ffadec0fc7260c02b549d6e4",
+        "find_spoof.py": "bd25d9a1f4849706c275c88b118f85b3c9e2858fc394e33aa39a9ca6b33be260",
+        "parse_velo.py": "e1e7f2c05d15e3b45f7dc1d7039a7bdbe30d1bb567f385a79c836065cd13d222",
+        "pc_stats.py": "db28a3fb5cfbc056739b9b4c9d49a18de093f09da90ae35cebf3917d1da935ae",
+        "ppc_control.py": "f1d0782530a41a41fb88e5482ed699576bcd739248db0f9ce2f9d36b4584c0f1",
+        "real_dual.npz": "44990d72cb402f6a8979f12a42e1abb3e0c43af5654f189de374a08f823f7f3b",
+        "real_last.npz": "cc0dc69e9b13a7df25c2492477af0bbc3b16d208db0b2b1a108361fc2a752fcf",
+        "real_removal.npz": "7555c50a975642bf48d65ea76963c398291dc2554fef8b7c68fc277d965f9064",
+        "real_removal_v3.py": "3613222b4ea5bc1a0fba888852c9b821a517db81af61d910a9bd61281b365604",
+        "realizability.py": "eb69f6fbc74d552ff6d22049982b246e46889e1f31f61113afea6efbc5c23371",
+        "scan_far.py": "8d0914abbcbf977b1feec845e63f3cf71ad1144cdc86f7d79de22260edf79eb5",
+        "scan_refl.py": "dc90d02cdb8eed047e4197cf8304ffcc96acabf790b106fc2d2ce8ad91f0ad49",
+        "sector_detail.py": "5291f3a78ebd2431ac20b46ba8863cdca908f575eec1a82e0425bbff5b7c5fcc",
+        "track_target.py": "6dd26b00adf56592d1e5b818984ecd905bd98a2aeb00c037f62eaddcd258327e"
+      },
+      "local_dir": "validation/osf_k6nf2",
+      "upstream_dir": "osf_k6nf2"
+    },
+    {
+      "files": {
+        "ATLAS_REAL_WORLD_VALIDATION.md": "9a88ba3e4e3bbbdac05d7659e34b1c5e8da0ec69fbcbabcfd2df4b37ca344d22",
+        "ATLAS_RESULTS.md": "d6e08b65a0f17135966c829e626adce35b64c571188dc10637a3c839206b43fc",
+        "SUMMARY.md": "1d487b816044a9ad63b5338821be954e1104b6a1e97b68ed22068f00dac7d921",
+        "atlas_eval_metrics_summary.pdf": "0adfae4debd37c680e75458006a93d3e8b3be7731a593eb17b145d442315ba33",
+        "rebuttal.md": "11346915d4b24fd09c4fec6f1fe6bbed7fe22cb643599de6e7eb6af5bd8337b6"
+      },
+      "local_dir": "results",
+      "upstream_dir": "."
+    },
+    {
+      "files": {
+        "injection_1_clean.png": "58494e830aa02c19d1154e9a3de71ec94d7f373cceea6a72de2d262db2290e03",
+        "injection_2_injected.png": "585566a0a7fbe67791704a48b6ad4d2c7b93cce693845ce5d0f452f96358dce6",
+        "injection_3_predicted.png": "850c6d4f9ff56f64dc8081be88a69e3110a0ec56939bf5ab5a9eabcd11aa2443",
+        "removal_1_clean.png": "80976114943f4ce6e15fcf0856eeba1521deec2a62d2e245077ee73d410a6531",
+        "removal_2_removed.png": "9b919e1a50c622aafc25d7ac45042e8508a033edb005555e54fea74f320ffc30",
+        "removal_3_predicted.png": "51dd2323d11f9538ff3e3f3e6ba1f3431b55463d453a844bd4c7d2b683877b5a"
+      },
+      "local_dir": "results/qualitative_figs",
+      "upstream_dir": "qualitative_figs"
+    }
+  ],
   "patches": {
     "removal.py": "Removed three unused module-level plotting imports (matplotlib.pyplot, plotly.graph_objects, plotly.io). Verified unreferenced by AST. Physics untouched; re-validated at 129/129."
   },
