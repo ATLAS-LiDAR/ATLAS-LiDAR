@@ -1,9 +1,30 @@
 # Where this code came from
 
 Everything in this directory was copied **byte for byte** out of the paper's
-pipeline repository (`Polar-Hierarchical-Mamba`, `atlas_generation/`) at commit
-`0a4a98e1c3fc22f8d664e0fe27fa0ef2235e7d15`. Not retyped, not tidied, not
-refactored on the way in.
+pipeline repository (`Polar-Hierarchical-Mamba`, `atlas_generation/`). Not retyped,
+not tidied, not refactored on the way in.
+
+## It came from uncommitted work, and that matters
+
+The copy is of that repository's **working tree**, not of a commit. Two files carried
+uncommitted changes relative to its `HEAD` (`0a4a98e1c3fc`):
+
+- **`nuscenes_atlas_common.py`** — +250/-13, adding the whole attack-scheduling
+  feature: `build_single_attack_schedule`, `_scene_seed`, `extract_attack_spans`,
+  `setup_scene_spoofs`, `resolve_schedule`, `add_schedule_args`.
+- **`removal.py`** — +7/-2, adding the `dt` parameter to `match_with_velocity` and
+  the docstring warning that passing Waymo's 0.1 for nuScenes keyframes makes the
+  constant-velocity prediction 5x too short and silently drops the track.
+
+The sandbox was developed against these versions — `src/core/schedule.js` is a port
+of those scheduling functions, and the `dt` warning is one of the fidelity notes in
+the README — so every 129/129 cross-validation result refers to them, and always
+has.
+
+The consequence is that **this extraction is not reproducible from the pipeline
+repo's git history** until those changes are committed there. `check_provenance.py`
+prints a warning on every run to keep that visible. Once they are committed, record
+the commit here and drop the warning.
 
 `PROVENANCE.json` records a sha256 for every file. `tools/check_provenance.py`
 verifies them, and `--vs-phm` additionally diffs against the pipeline repo to catch

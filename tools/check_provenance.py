@@ -91,11 +91,22 @@ def main():
             clean += 1
 
     if rc == 0:
-        print("  %d file(s) byte-identical to %s@%s"
-              % (clean, manifest["source_repo"], manifest["source_commit"][:12]))
+        print("  %d file(s) byte-identical to the %s %s"
+              % (clean, manifest["source_repo"], manifest["source_state"]))
         for f in sorted(patches):
-            print("  1 declared patch: %s" % f)
+            print("  declared patch: %s" % f)
             print("      %s" % patches[f])
+        # The extraction came from uncommitted work upstream, so say so every run
+        # rather than burying it in a JSON field nobody opens.
+        unc = manifest.get("uncommitted_vs_head", {}).get("head_sha256", {})
+        if unc:
+            print("  WARNING: %d file(s) were extracted from UNCOMMITTED upstream work"
+                  % len(unc))
+            for f in sorted(unc):
+                print("      %s differs from upstream HEAD %s"
+                      % (f, manifest["head_commit_at_extraction"][:12]))
+            print("      Not reproducible from the pipeline repo's history until"
+                  " those changes are committed there.")
 
     if a.vs_phm:
         src = os.path.join(PHM, manifest["source_path"])

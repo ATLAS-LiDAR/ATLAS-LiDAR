@@ -49,11 +49,18 @@
       "upstream": "3d8888533ec0cab24eb5dc4839b8e4df375a513b88dc3b277f24c75ee9c277ec"
     }
   },
-  "last_commit_touching_core": "114e21d777319ac0c75a2b22d16b33c1066392bd",
+  "head_commit_at_extraction": "0a4a98e1c3fc22f8d664e0fe27fa0ef2235e7d15",
   "patches": {
     "removal.py": "Removed three unused module-level plotting imports (matplotlib.pyplot, plotly.graph_objects, plotly.io). Verified unreferenced by AST. Physics untouched; re-validated at 129/129."
   },
-  "source_commit": "0a4a98e1c3fc22f8d664e0fe27fa0ef2235e7d15",
   "source_path": "atlas_generation/",
-  "source_repo": "Polar-Hierarchical-Mamba"
+  "source_repo": "Polar-Hierarchical-Mamba",
+  "source_state": "working tree (contained uncommitted changes relative to HEAD)",
+  "uncommitted_vs_head": {
+    "head_sha256": {
+      "nuscenes_atlas_common.py": "6f2567d87d14a36ccb8d487165bf64f39eb4686a4b9a72c679ae90020bcfad98",
+      "removal.py": "9e9f8cae85fc29b0b7e44de641e87826945643da380999e83abf13555933db81"
+    },
+    "note": "These files were extracted from uncommitted work in the pipeline repo, so the extraction is NOT reproducible from its git history until those changes are committed there. The sandbox was developed against these versions and all 129/129 cross-validation results refer to them."
+  }
 }
