@@ -43,8 +43,13 @@ jobs:
       # The generation and evaluation layers cannot be imported here - they need
       # torch, OpenPCDet and checkpoints. Compiling them is still worth doing: it
       # catches syntax breakage in code CI otherwise never touches at all.
+      #
+      # -x phim skips the vendored pipeline repo. checkout above does not fetch
+      # submodules, so eval/phim is empty here anyway - deliberately, since the only
+      # thing that reads it is `check_provenance.py --vs-phm`, and drift against
+      # upstream is a question for a developer's checkout, not for CI.
       - name: Byte-compile the generation and evaluation layers
-        run: python3 -m compileall -q atlas eval validation
+        run: python3 -m compileall -q -x phim atlas eval validation
 
       - name: Unit tests (headless Chrome)
         run: ./run-tests.sh

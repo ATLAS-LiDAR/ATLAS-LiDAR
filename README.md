@@ -7,7 +7,7 @@ Everything ATLAS, in one repository on purpose:
 | | | |
 |---|---|---|
 | **`atlas/`** | the attack | The reference implementation: A-HFR sector removal and trace-based injection. ~1,400 lines, **numpy only** - no torch, no CUDA, no OpenPCDet, no checkpoints. `pip install -e .` Alongside it, the dataset generators that turn Waymo/nuScenes/KITTI into attacked variants. |
-| **`eval/`** | the harness | Detector evaluation: attack success rate against clean mAP/NDS, the ablations, the qualitative figures. Needs torch and an OpenPCDet checkout - see [eval/README.md](eval/README.md). |
+| **`eval/`** | the harness | Detector evaluation: attack success rate against clean mAP/NDS, the ablations, the qualitative figures. Needs torch and the detectors, vendored as a submodule at `eval/phim` - see [eval/README.md](eval/README.md). |
 | **`validation/`** | the reality check | Real-world fidelity validation against OSF deposit `k6nf2`: does ATLAS's output look like an actual spoofer's? |
 | **`results/`** | the findings | `ATLAS_RESULTS.md`, `ATLAS_REAL_WORLD_VALIDATION.md`, `SUMMARY.md`, the metrics PDF and the BEV figures. |
 | **root, `src/`, `assets/`** | the sandbox | An interactive visualizer for the attack, running on real recorded driving frames. No build step, no Node. |
@@ -15,7 +15,16 @@ Everything ATLAS, in one repository on purpose:
 The split against the paper's pipeline repository is: **the attack and everything
 needed to run and score it lives here; the LiDAR perception models live there.**
 PHiM, LOT, the OpenPCDet fork, the CUDA extensions and the checkpoints stay in
-`Polar-Hierarchical-Mamba`.
+`Polar-Hierarchical-Mamba`, which is vendored as a submodule at `eval/phim` pinned to
+its `ATLAS` branch — so the evaluation path is a `git submodule update --init` rather
+than a paragraph of instructions:
+
+```bash
+git clone --recurse-submodules <this repo>
+```
+
+The submodule is only needed for `eval/`. The attack, the sandbox and the fidelity
+check all run without it.
 
 The attack and the sandbox live together because that is what makes the fidelity claim
 checkable. The sandbox is a JavaScript port of `atlas/`, and `tools/crossvalidate.py`
@@ -31,10 +40,11 @@ See [atlas/PROVENANCE.md](atlas/PROVENANCE.md).
 
 ## What is not here
 
-The detectors themselves. `eval/` scores ATLAS against OpenPCDet models, which means it
-needs a `Polar-Hierarchical-Mamba` checkout for `pcdet`, plus trained checkpoints and
-the raw KITTI/nuScenes archives - it is an optional extra (`pip install -e '.[eval]'`),
-deliberately, so that the attack itself stays installable on numpy alone.
+The detectors' weights and the raw datasets. `eval/phim` brings the model *code*, but
+trained checkpoints and the KITTI/nuScenes archives have to be fetched separately, and
+the OpenPCDet CUDA extensions have to be built. `eval` is an optional extra
+(`pip install -e '.[eval]'`) deliberately, so the attack itself stays installable on
+numpy alone.
 
 Two large artifacts are present on disk but gitignored: the `trace_*.pkl` injection
 sources (159 MB, regenerate with `atlas/build_*_assets.py`) and the OSF k6nf2 raw

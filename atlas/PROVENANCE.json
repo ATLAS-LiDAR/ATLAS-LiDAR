@@ -152,6 +152,27 @@
       "upstream_dir": "qualitative_figs"
     }
   ],
+  "mirrors_not_in_extraction_commit": {
+    "analyze_schedule_variants.py": "untracked",
+    "atlas_eval_metrics_summary.pdf": "untracked",
+    "atlas_generation/add_croissant_rai.py": "untracked",
+    "atlas_generation/build_kitti_assets.py": "untracked",
+    "atlas_generation/build_nuscenes_assets.py": "untracked",
+    "atlas_generation/export_kitti_hf.py": "untracked",
+    "atlas_generation/export_nuscenes_hf.py": "untracked",
+    "atlas_generation/generate_data_global_nuscenes.py": "6add8cfc531772a7bb0d1e698eac9ce8dd93a13450928e7a6e24ec77e403aa31",
+    "atlas_generation/generate_data_relative_nuscenes.py": "b0d05456cfa84018b3c4cefbc0d78ece01c7164c0901b3f24cb47bbbf24ea76a",
+    "atlas_generation/generate_data_removal_nuscenes.py": "f402085c7c94abe043b5c55cfee53abba7f4f123efe2599c44fd21002ebcba08",
+    "atlas_generation/regen_v1_removal.sh": "untracked",
+    "atlas_generation/run_sched_variants.sh": "untracked",
+    "atlas_injection_eval_only.py": "untracked",
+    "cache_injection_preds.py": "untracked",
+    "eval_matrix_nuscenes.py": "f1186e81191d8c774a90aa3174563c4d93e4afc78dd801d516b96e8f1271c263",
+    "osf_k6nf2/real_dual.npz": "untracked",
+    "osf_k6nf2/real_last.npz": "untracked",
+    "osf_k6nf2/real_removal.npz": "untracked",
+    "run_sched_eval.sh": "untracked"
+  },
   "patches": {
     "removal.py": "Removed three unused module-level plotting imports (matplotlib.pyplot, plotly.graph_objects, plotly.io). Verified unreferenced by AST. Physics untouched; re-validated at 129/129."
   },

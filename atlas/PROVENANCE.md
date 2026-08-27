@@ -26,9 +26,45 @@ repo's git history** until those changes are committed there. `check_provenance.
 prints a warning on every run to keep that visible. Once they are committed, record
 the commit here and drop the warning.
 
+The same is true of 19 of the 64 mirrored harness files — they were untracked or
+uncommitted upstream at the extraction commit. `mirrors_not_in_extraction_commit` in
+`PROVENANCE.json` names each one and records its content at that commit where it had
+any, so the two situations stay distinguishable from real drift. Notably
+`build_kitti_assets.py` and `build_nuscenes_assets.py` — the code that *measured* the
+calibration assets — are among the untracked ones, which is worth committing upstream if
+the asset provenance is ever questioned.
+
 `PROVENANCE.json` records a sha256 for every file. `tools/check_provenance.py`
 verifies them, and `--vs-phm` additionally diffs against the pipeline repo to catch
 upstream drift.
+
+## Which pipeline checkout `--vs-phm` compares against
+
+The pipeline repo is vendored as a submodule at `eval/phim`, pinned to its `ATLAS`
+branch at `0a4a98e1c3fc` — the extraction commit itself, so the pin and
+`head_commit_at_extraction` are the same commit by construction. That is the default
+comparison target, and it is what anyone cloning this repo gets.
+
+Because it is a commit rather than a working tree, it cannot contain the uncommitted and
+untracked files above. `--vs-phm` reports those as `at extraction commit` rather than as
+drift, and counts them separately:
+
+```
+checking upstream for drift: submodule eval/phim
+  at extraction commit: nuscenes_atlas_common.py (lacks the uncommitted upstream work)
+  at extraction commit: removal.py (lacks the uncommitted upstream work)
+  21 file(s) at the extraction commit, missing work that was uncommitted or untracked upstream
+  no drift: the extraction is current
+```
+
+For the strict comparison — against a checkout that actually carries that work — point
+`PHM_ROOT` at it:
+
+```bash
+PHM_ROOT=~/rsch/Polar-Hierarchical-Mamba tools/check_provenance.py --vs-phm
+```
+
+which reports no drift and nothing at-commit, because every hash matches exactly.
 
 ## Why the hashes matter
 

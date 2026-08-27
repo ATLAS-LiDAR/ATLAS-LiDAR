@@ -1,0 +1,4 @@
+[submodule "eval/phim"]
+	path = eval/phim
+	url = https://github.com/meilongzhang/Polar-Hierarchical-Mamba.git
+	branch = ATLAS

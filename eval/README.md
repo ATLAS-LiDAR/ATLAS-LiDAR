@@ -8,7 +8,7 @@ Every file here was copied byte-for-byte out of `Polar-Hierarchical-Mamba`'s
 repository root. Hashes are in `atlas/PROVENANCE.json` under `mirrors`;
 `tools/check_provenance.py` verifies them and `--vs-phm` catches upstream drift.
 
-## The boundary, and why this directory needs a checkout of the pipeline repo
+## The boundary, and the submodule that spans it
 
 ATLAS lives here. The detectors it attacks do not — they are OpenPCDet models, and the
 pipeline repo is a fork of OpenPCDet carrying PHiM, LOT, CUDA extensions and the
@@ -22,12 +22,26 @@ check runnable in CI. The scripts here import `pcdet.config`, `pcdet.models`,
 `pcdet.datasets` and `pcdet.ops.iou3d_nms` at module scope and will not import at all
 without that environment. That is expected, not a packaging bug.
 
+`phim/` is that repo, vendored as a **git submodule pinned to its `ATLAS` branch** —
+not `public_release`, because the ATLAS branch is the one carrying the evaluation hook
+described below and the nuScenes/KITTI configs these runs used.
+
 ```bash
-pip install -e '/path/to/atlas-lidar[eval]'   # numpy, torch, scipy, easydict, pyyaml
-cd /path/to/Polar-Hierarchical-Mamba && python setup.py develop   # provides pcdet
+git submodule update --init eval/phim          # or clone with --recurse-submodules
+pip install -e '.[eval]'                       # numpy, torch, scipy, easydict, pyyaml
+cd eval/phim && python setup.py develop        # builds the CUDA extensions, provides pcdet
 ```
 
-`atlas_generation` here is a symlink to `../atlas`. The copied scripts do
+The last step needs a CUDA toolchain and takes a while; it is the OpenPCDet build, not
+anything ATLAS adds. Checkpoints are not in the submodule — get them from the pipeline
+repo's own instructions.
+
+`atlas_generation` here is a symlink to `../atlas`, and `phim/atlas_generation` is the
+submodule's own copy. They are not the same tree: the submodule is pinned to the
+extraction commit, so its copy lacks work that was uncommitted upstream at that point.
+`tools/check_provenance.py --vs-phm` reports exactly which files that affects.
+
+Why the symlink: the copied scripts do
 `sys.path.insert(0, dirname(__file__) + "/atlas_generation")` to reach
 `nuscenes_atlas_common`, and the symlink is what lets them stay verbatim instead of
 being edited on the way in.
@@ -40,9 +54,12 @@ branch that `WaymoDataset.evaluation()` calls to score attack success per frame.
 
 It stays in the pipeline repo because it is called from a `pcdet` dataset class and
 cannot run anywhere else. It is recorded here because it is ATLAS's code, and without
-it the Waymo ASR numbers cannot be reproduced from a clean OpenPCDet. It applies
-cleanly to the pipeline repo's `public_release` branch, and is already present on its
-`ATLAS` branch.
+it the Waymo ASR numbers cannot be reproduced from a clean OpenPCDet.
+
+**You do not need to apply it** — it is already present in `phim/`, which is pinned to
+the `ATLAS` branch. It is kept here so the logic is versioned on the attack's side, and
+so it can be reapplied to a different OpenPCDet fork; it applies cleanly to the pipeline
+repo's `public_release` branch.
 
 The rest of that repo's `pcdet/` changes are PHiM/LOT model work and stay there.
 

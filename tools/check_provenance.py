@@ -41,6 +41,21 @@ generation, the detector evaluation matrix, real-world validation against OSF k6
 and the result writeups. A single hash each, because a difference there is a
 maintenance problem - the copies have diverged and someone should reconcile them -
 not a reason to distrust the fidelity number.
+
+WHICH CHECKOUT --vs-phm COMPARES AGAINST
+The pipeline repo is vendored as a submodule at eval/phim, pinned to the ATLAS branch
+at the extraction commit. That is what --vs-phm uses by default, and it is the version
+anyone cloning this repo will have.
+
+But two files were extracted from work that was uncommitted upstream, so the submodule
+cannot contain them - it is at the commit, not the working tree. Those two are reported
+as `at extraction commit` rather than as drift: expected, already warned about above,
+and not something a fresh clone can fix.
+
+Set PHM_ROOT to a checkout that carries those uncommitted changes to get the strict
+comparison instead:
+
+    PHM_ROOT=~/rsch/Polar-Hierarchical-Mamba tools/check_provenance.py --vs-phm
 """
 import argparse
 import hashlib
@@ -50,7 +65,25 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(ROOT, "atlas", "PROVENANCE.json")
-PHM = os.environ.get("PHM_ROOT", os.path.expanduser("~/rsch/Polar-Hierarchical-Mamba"))
+SUBMODULE = os.path.join(ROOT, "eval", "phim")
+
+
+def _phm_root():
+    """Where to look for the pipeline repo when checking for drift.
+
+    Three sources, in order. PHM_ROOT wins because it is the only one that can point
+    at a checkout with uncommitted work in it, which is the strictest comparison
+    available - see WHICH CHECKOUT below.
+    """
+    env = os.environ.get("PHM_ROOT")
+    if env:
+        return env
+    if os.path.isdir(os.path.join(SUBMODULE, "atlas_generation")):
+        return SUBMODULE
+    return os.path.expanduser("~/rsch/Polar-Hierarchical-Mamba")
+
+
+PHM = _phm_root()
 
 
 def sha256(path):
@@ -152,28 +185,63 @@ def main():
 
     if a.vs_phm:
         src = os.path.join(PHM, manifest["source_path"])
-        print("\nchecking upstream for drift: %s" % src)
+        where = "submodule eval/phim" if PHM == SUBMODULE else PHM
+        print("\nchecking upstream for drift: %s" % where)
         if not os.path.isdir(src):
-            print("  pipeline repo not found - skipping (set PHM_ROOT)")
+            print("  pipeline repo not found - run `git submodule update --init`,"
+                  " or set PHM_ROOT")
             return rc
-        drift = 0
+        # Files known to have been extracted from uncommitted upstream work. A
+        # checkout at the extraction commit necessarily has the pre-change version,
+        # which is a documented gap, not drift.
+        at_head = manifest.get("uncommitted_vs_head", {}).get("head_sha256", {})
+        drift = expected = 0
         for f, rec in sorted(files.items()):
             up = os.path.join(src, f)
             if not os.path.exists(up):
                 print("  gone upstream: %s" % f)
                 drift += 1
-            elif sha256(up) != rec["upstream"]:
+                continue
+            got = sha256(up)
+            if got == rec["upstream"]:
+                continue
+            if f in at_head and got == at_head[f]:
+                print("  at extraction commit: %s (lacks the uncommitted upstream work)" % f)
+                expected += 1
+            else:
                 print("  DRIFTED: %s changed upstream since extraction" % f)
                 drift += 1
+        # Same idea for the mirrored harness, at file granularity: 19 of these were
+        # untracked or uncommitted upstream at the extraction commit, so a checkout
+        # at that commit legitimately lacks them.
+        pre = manifest.get("mirrors_not_in_extraction_commit", {})
         for group in mirrors:
+            up_dir = group["upstream_dir"]
             for name, want in sorted(group["files"].items()):
-                up = os.path.join(PHM, group["upstream_dir"], name)
+                rel = name if up_dir == "." else "%s/%s" % (up_dir, name)
+                up = os.path.join(PHM, up_dir, name)
+                known = pre.get(rel)
                 if not os.path.exists(up):
-                    print("  gone upstream: %s/%s" % (group["upstream_dir"], name))
+                    if known == "untracked":
+                        expected += 1
+                    else:
+                        print("  gone upstream: %s" % rel)
+                        drift += 1
+                    continue
+                got = sha256(up)
+                if got == want:
+                    continue
+                if known and known != "untracked" and got == known:
+                    expected += 1
+                elif known == "untracked":
+                    expected += 1
+                else:
+                    print("  DRIFTED: %s changed upstream" % rel)
                     drift += 1
-                elif sha256(up) != want:
-                    print("  DRIFTED: %s/%s changed upstream" % (group["upstream_dir"], name))
-                    drift += 1
+
+        if expected:
+            print("  %d file(s) at the extraction commit, missing work that was"
+                  " uncommitted or untracked upstream" % expected)
         if drift:
             print("\n%d file(s) drifted. Refresh, re-run crossvalidate.py, then --update." % drift)
             rc = 1
