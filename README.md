@@ -34,8 +34,17 @@ needed a sibling clone and a specific conda env, so it only ever ran on one mach
 Here it runs in CI.
 
 Every file that came from the pipeline repo was copied byte for byte, and
-`atlas/PROVENANCE.json` pins a hash for each, so agreeing with `atlas/` is still
-transitively agreeing with the published implementation rather than with a local edit.
+`atlas/PROVENANCE.json` pins a hash for each — 12 core, 64 mirrored. Those hashes are
+verified against a **commit** in the pipeline repo's history (`a11dc37`), so agreeing
+with `atlas/` is transitively agreeing with the published implementation rather than
+with a local edit, and anyone can check it:
+
+```bash
+tools/check_provenance.py --vs-phm
+# verifying against Polar-Hierarchical-Mamba a11dc3709292 in submodule eval/phim
+#   all 76 file(s) match: the extraction is reproducible from upstream history
+```
+
 See [atlas/PROVENANCE.md](atlas/PROVENANCE.md).
 
 ## What is not here

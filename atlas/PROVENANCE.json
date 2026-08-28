@@ -152,38 +152,16 @@
       "upstream_dir": "qualitative_figs"
     }
   ],
-  "mirrors_not_in_extraction_commit": {
-    "analyze_schedule_variants.py": "untracked",
-    "atlas_eval_metrics_summary.pdf": "untracked",
-    "atlas_generation/add_croissant_rai.py": "untracked",
-    "atlas_generation/build_kitti_assets.py": "untracked",
-    "atlas_generation/build_nuscenes_assets.py": "untracked",
-    "atlas_generation/export_kitti_hf.py": "untracked",
-    "atlas_generation/export_nuscenes_hf.py": "untracked",
-    "atlas_generation/generate_data_global_nuscenes.py": "6add8cfc531772a7bb0d1e698eac9ce8dd93a13450928e7a6e24ec77e403aa31",
-    "atlas_generation/generate_data_relative_nuscenes.py": "b0d05456cfa84018b3c4cefbc0d78ece01c7164c0901b3f24cb47bbbf24ea76a",
-    "atlas_generation/generate_data_removal_nuscenes.py": "f402085c7c94abe043b5c55cfee53abba7f4f123efe2599c44fd21002ebcba08",
-    "atlas_generation/regen_v1_removal.sh": "untracked",
-    "atlas_generation/run_sched_variants.sh": "untracked",
-    "atlas_injection_eval_only.py": "untracked",
-    "cache_injection_preds.py": "untracked",
-    "eval_matrix_nuscenes.py": "f1186e81191d8c774a90aa3174563c4d93e4afc78dd801d516b96e8f1271c263",
-    "osf_k6nf2/real_dual.npz": "untracked",
-    "osf_k6nf2/real_last.npz": "untracked",
-    "osf_k6nf2/real_removal.npz": "untracked",
-    "run_sched_eval.sh": "untracked"
+  "notes": {
+    "why_a_commit_not_a_worktree": "The extraction originally came from an uncommitted working tree, so it could not be verified against upstream history at all. That work is now committed (4e0928c, 8b69e8e, a11dc37) and ATLAS was then removed from the pipeline repo in 4a3eec7, which owns only the perception models. So the comparison target is a commit read out of history, not a directory on disk: it is reproducible, and it survives the removal."
   },
   "patches": {
     "removal.py": "Removed three unused module-level plotting imports (matplotlib.pyplot, plotly.graph_objects, plotly.io). Verified unreferenced by AST. Physics untouched; re-validated at 129/129."
   },
   "source_path": "atlas_generation/",
   "source_repo": "Polar-Hierarchical-Mamba",
-  "source_state": "working tree (contained uncommitted changes relative to HEAD)",
-  "uncommitted_vs_head": {
-    "head_sha256": {
-      "nuscenes_atlas_common.py": "6f2567d87d14a36ccb8d487165bf64f39eb4686a4b9a72c679ae90020bcfad98",
-      "removal.py": "9e9f8cae85fc29b0b7e44de641e87826945643da380999e83abf13555933db81"
-    },
-    "note": "These files were extracted from uncommitted work in the pipeline repo, so the extraction is NOT reproducible from its git history until those changes are committed there. The sandbox was developed against these versions and all 129/129 cross-validation results refer to them."
-  }
+  "source_state": "commit a11dc37092 on the ATLAS branch - the last commit that contains the ATLAS code, immediately before it was removed upstream in 4a3eec7",
+  "upstream_branch": "ATLAS",
+  "upstream_commit": "a11dc37092929625706e4c994f6b267baf52020a",
+  "upstream_removed_at": "4a3eec7"
 }

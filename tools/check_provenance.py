@@ -42,25 +42,29 @@ and the result writeups. A single hash each, because a difference there is a
 maintenance problem - the copies have diverged and someone should reconcile them -
 not a reason to distrust the fidelity number.
 
-WHICH CHECKOUT --vs-phm COMPARES AGAINST
-The pipeline repo is vendored as a submodule at eval/phim, pinned to the ATLAS branch
-at the extraction commit. That is what --vs-phm uses by default, and it is the version
-anyone cloning this repo will have.
+--vs-phm READS A COMMIT, NOT A DIRECTORY
+It used to compare against whatever was sitting in the pipeline repo's
+atlas_generation/ directory. That stopped being possible, for two good reasons:
 
-But two files were extracted from work that was uncommitted upstream, so the submodule
-cannot contain them - it is at the commit, not the working tree. Those two are reported
-as `at extraction commit` rather than as drift: expected, already warned about above,
-and not something a fresh clone can fix.
+  1. The extraction originally came from an UNCOMMITTED working tree, so there was
+     no commit that contained what we shipped. That is fixed - the work was committed
+     upstream in 4e0928c, 8b69e8e and a11dc37.
+  2. ATLAS was then removed from the pipeline repo (4a3eec7), which now owns only the
+     perception models. The directory does not exist there any more.
 
-Set PHM_ROOT to a checkout that carries those uncommitted changes to get the strict
-comparison instead:
+So the comparison target is `upstream_commit` in the manifest - a11dc37092, the last
+commit that contains the ATLAS code - read out of git history with `git show`. This is
+strictly better than the old behaviour: it is reproducible by anyone, it cannot be
+perturbed by a dirty working tree, and it survives the upstream removal.
 
-    PHM_ROOT=~/rsch/Polar-Hierarchical-Mamba tools/check_provenance.py --vs-phm
+The commit is reachable from the submodule at eval/phim, so a plain clone can run this.
+PHM_ROOT overrides the location if you keep the pipeline repo elsewhere.
 """
 import argparse
 import hashlib
 import json
 import os
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -69,21 +73,31 @@ SUBMODULE = os.path.join(ROOT, "eval", "phim")
 
 
 def _phm_root():
-    """Where to look for the pipeline repo when checking for drift.
-
-    Three sources, in order. PHM_ROOT wins because it is the only one that can point
-    at a checkout with uncommitted work in it, which is the strictest comparison
-    available - see WHICH CHECKOUT below.
-    """
+    """Where to find a clone of the pipeline repo. Only its object store is used."""
     env = os.environ.get("PHM_ROOT")
     if env:
         return env
-    if os.path.isdir(os.path.join(SUBMODULE, "atlas_generation")):
+    if os.path.isdir(os.path.join(SUBMODULE, ".git")) or os.path.isfile(
+            os.path.join(SUBMODULE, ".git")):
         return SUBMODULE
     return os.path.expanduser("~/rsch/Polar-Hierarchical-Mamba")
 
 
 PHM = _phm_root()
+
+
+def git_blob_sha256(repo, commit, relpath):
+    """sha256 of relpath as of commit, or None if it is not there."""
+    r = subprocess.run(["git", "-C", repo, "show", "%s:%s" % (commit, relpath)],
+                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    if r.returncode != 0:
+        return None
+    return hashlib.sha256(r.stdout).hexdigest()
+
+
+def have_commit(repo, commit):
+    return subprocess.run(["git", "-C", repo, "cat-file", "-e", commit + "^{commit}"],
+                          stderr=subprocess.DEVNULL).returncode == 0
 
 
 def sha256(path):
@@ -143,13 +157,11 @@ def main():
             clean += 1
 
     if rc == 0:
-        print("  %d file(s) byte-identical to the %s %s"
+        print("  %d file(s) byte-identical to %s %s"
               % (clean, manifest["source_repo"], manifest["source_state"]))
         for f in sorted(patches):
             print("  declared patch: %s" % f)
             print("      %s" % patches[f])
-        # The extraction came from uncommitted work upstream, so say so every run
-        # rather than burying it in a JSON field nobody opens.
         unc = manifest.get("uncommitted_vs_head", {}).get("head_sha256", {})
         if unc:
             print("  WARNING: %d file(s) were extracted from UNCOMMITTED upstream work"
@@ -184,69 +196,56 @@ def main():
                          manifest["source_repo"], group["upstream_dir"].rstrip("/.")))
 
     if a.vs_phm:
-        src = os.path.join(PHM, manifest["source_path"])
+        commit = manifest["upstream_commit"]
         where = "submodule eval/phim" if PHM == SUBMODULE else PHM
-        print("\nchecking upstream for drift: %s" % where)
-        if not os.path.isdir(src):
+        print("\nverifying against %s %s in %s"
+              % (manifest["source_repo"], commit[:12], where))
+        if not os.path.isdir(os.path.join(PHM, ".git")) and not os.path.isfile(
+                os.path.join(PHM, ".git")):
             print("  pipeline repo not found - run `git submodule update --init`,"
                   " or set PHM_ROOT")
             return rc
-        # Files known to have been extracted from uncommitted upstream work. A
-        # checkout at the extraction commit necessarily has the pre-change version,
-        # which is a documented gap, not drift.
-        at_head = manifest.get("uncommitted_vs_head", {}).get("head_sha256", {})
-        drift = expected = 0
+        if not have_commit(PHM, commit):
+            print("  commit %s not in that clone. It is on the %s branch;"
+                  % (commit[:12], manifest.get("upstream_branch", "ATLAS")))
+            print("  try `git -C %s fetch --all`." % where)
+            return 1
+
+        # ATLAS was removed upstream in `upstream_removed_at`, so reading the working
+        # tree would find nothing. Read blobs out of the commit instead.
+        drift = checked = 0
+        src = manifest["source_path"].rstrip("/")
         for f, rec in sorted(files.items()):
-            up = os.path.join(src, f)
-            if not os.path.exists(up):
-                print("  gone upstream: %s" % f)
+            got = git_blob_sha256(PHM, commit, "%s/%s" % (src, f))
+            checked += 1
+            if got is None:
+                print("  NOT IN COMMIT: %s/%s" % (src, f))
                 drift += 1
-                continue
-            got = sha256(up)
-            if got == rec["upstream"]:
-                continue
-            if f in at_head and got == at_head[f]:
-                print("  at extraction commit: %s (lacks the uncommitted upstream work)" % f)
-                expected += 1
-            else:
-                print("  DRIFTED: %s changed upstream since extraction" % f)
+            elif got != rec["upstream"]:
+                print("  DRIFTED: %s/%s differs at %s" % (src, f, commit[:12]))
                 drift += 1
-        # Same idea for the mirrored harness, at file granularity: 19 of these were
-        # untracked or uncommitted upstream at the extraction commit, so a checkout
-        # at that commit legitimately lacks them.
-        pre = manifest.get("mirrors_not_in_extraction_commit", {})
         for group in mirrors:
             up_dir = group["upstream_dir"]
             for name, want in sorted(group["files"].items()):
                 rel = name if up_dir == "." else "%s/%s" % (up_dir, name)
-                up = os.path.join(PHM, up_dir, name)
-                known = pre.get(rel)
-                if not os.path.exists(up):
-                    if known == "untracked":
-                        expected += 1
-                    else:
-                        print("  gone upstream: %s" % rel)
-                        drift += 1
-                    continue
-                got = sha256(up)
-                if got == want:
-                    continue
-                if known and known != "untracked" and got == known:
-                    expected += 1
-                elif known == "untracked":
-                    expected += 1
-                else:
-                    print("  DRIFTED: %s changed upstream" % rel)
+                got = git_blob_sha256(PHM, commit, rel)
+                checked += 1
+                if got is None:
+                    print("  NOT IN COMMIT: %s" % rel)
+                    drift += 1
+                elif got != want:
+                    print("  DRIFTED: %s differs at %s" % (rel, commit[:12]))
                     drift += 1
 
-        if expected:
-            print("  %d file(s) at the extraction commit, missing work that was"
-                  " uncommitted or untracked upstream" % expected)
         if drift:
-            print("\n%d file(s) drifted. Refresh, re-run crossvalidate.py, then --update." % drift)
+            print("\n%d of %d file(s) do not match the recorded upstream commit."
+                  " Refresh, re-run crossvalidate.py, then --update." % (drift, checked))
             rc = 1
         else:
-            print("  no drift: the extraction is current")
+            print("  all %d file(s) match: the extraction is reproducible from"
+                  " upstream history" % checked)
+            print("  (ATLAS was removed upstream in %s; this reads the commit before it)"
+                  % manifest.get("upstream_removed_at", "a later commit"))
 
     return rc
 

@@ -4,10 +4,13 @@ Everything in this directory was copied **byte for byte** out of the paper's
 pipeline repository (`Polar-Hierarchical-Mamba`, `atlas_generation/`). Not retyped,
 not tidied, not refactored on the way in.
 
-## It came from uncommitted work, and that matters
+## It came from uncommitted work — that mattered, and it is now fixed
 
-The copy is of that repository's **working tree**, not of a commit. Two files carried
-uncommitted changes relative to its `HEAD` (`0a4a98e1c3fc`):
+Worth recording, because it was true for a while and the fix is the reason this
+document can make a strong claim.
+
+The original copy was of that repository's **working tree**, not of a commit. Two files
+carried uncommitted changes relative to its then-`HEAD` (`0a4a98e1c3fc`):
 
 - **`nuscenes_atlas_common.py`** — +250/-13, adding the whole attack-scheduling
   feature: `build_single_attack_schedule`, `_scene_seed`, `extract_attack_spans`,
@@ -19,52 +22,50 @@ uncommitted changes relative to its `HEAD` (`0a4a98e1c3fc`):
 The sandbox was developed against these versions — `src/core/schedule.js` is a port
 of those scheduling functions, and the `dt` warning is one of the fidelity notes in
 the README — so every 129/129 cross-validation result refers to them, and always
-has.
+has. For as long as they were uncommitted, those results pointed at content that
+existed on one machine and nowhere in any repository's history.
 
-The consequence is that **this extraction is not reproducible from the pipeline
-repo's git history** until those changes are committed there. `check_provenance.py`
-prints a warning on every run to keep that visible. Once they are committed, record
-the commit here and drop the warning.
+A further 19 of the 64 mirrored harness files had the same problem, 15 of them
+untracked entirely. Two of those are worth naming: `build_kitti_assets.py` and
+`build_nuscenes_assets.py`, the scripts that *measured* every calibration `.npy` in
+this directory. They were untracked because the pipeline repo's `.gitignore` had
+`**build**` — intended for the compiled `build/` directory, but it matches any path
+containing the substring, so it silently swallowed them.
 
-The same is true of 19 of the 64 mirrored harness files — they were untracked or
-uncommitted upstream at the extraction commit. `mirrors_not_in_extraction_commit` in
-`PROVENANCE.json` names each one and records its content at that commit where it had
-any, so the two situations stay distinguishable from real drift. Notably
-`build_kitti_assets.py` and `build_nuscenes_assets.py` — the code that *measured* the
-calibration assets — are among the untracked ones, which is worth committing upstream if
-the asset provenance is ever questioned.
+**All of it is now committed upstream**, in three commits on the `ATLAS` branch:
 
-`PROVENANCE.json` records a sha256 for every file. `tools/check_provenance.py`
-verifies them, and `--vs-phm` additionally diffs against the pipeline repo to catch
-upstream drift.
+| | |
+|---|---|
+| `4e0928c` | fixes the `.gitignore` over-match, so the asset measurement scripts are visible to git at all |
+| `8b69e8e` | the scheduling layer and the `dt` fix — the two files above |
+| `a11dc37` | the remaining generation, evaluation and validation work |
 
-## Which pipeline checkout `--vs-phm` compares against
+`a11dc37` is therefore the first commit anywhere that contains this extraction in full,
+and it is what `PROVENANCE.json` records as `upstream_commit`.
 
-The pipeline repo is vendored as a submodule at `eval/phim`, pinned to its `ATLAS`
-branch at `0a4a98e1c3fc` — the extraction commit itself, so the pin and
-`head_commit_at_extraction` are the same commit by construction. That is the default
-comparison target, and it is what anyone cloning this repo gets.
+## `--vs-phm` verifies against a commit, not a directory
 
-Because it is a commit rather than a working tree, it cannot contain the uncommitted and
-untracked files above. `--vs-phm` reports those as `at extraction commit` rather than as
-drift, and counts them separately:
+ATLAS was then **removed** from the pipeline repo in `4a3eec7` — it owns only the
+perception models now, and `atlas_generation/` does not exist there any more. So
+comparing against a directory on disk stopped being possible, which is fine, because
+comparing against a commit is better anyway: reproducible by anyone, immune to a dirty
+working tree, and unaffected by the removal.
 
 ```
-checking upstream for drift: submodule eval/phim
-  at extraction commit: nuscenes_atlas_common.py (lacks the uncommitted upstream work)
-  at extraction commit: removal.py (lacks the uncommitted upstream work)
-  21 file(s) at the extraction commit, missing work that was uncommitted or untracked upstream
-  no drift: the extraction is current
+$ tools/check_provenance.py --vs-phm
+
+verifying against Polar-Hierarchical-Mamba a11dc3709292 in submodule eval/phim
+  all 76 file(s) match: the extraction is reproducible from upstream history
+  (ATLAS was removed upstream in 4a3eec7; this reads the commit before it)
 ```
 
-For the strict comparison — against a checkout that actually carries that work — point
-`PHM_ROOT` at it:
+The commit is reachable from the submodule at `eval/phim`, so a plain
+`git clone --recurse-submodules` can run this. `PHM_ROOT` overrides the location if you
+keep the pipeline repo elsewhere.
 
-```bash
-PHM_ROOT=~/rsch/Polar-Hierarchical-Mamba tools/check_provenance.py --vs-phm
-```
-
-which reports no drift and nothing at-commit, because every hash matches exactly.
+`PROVENANCE.json` records a sha256 for every file — 12 core, 64 mirrored.
+`tools/check_provenance.py` verifies the local copies; `--vs-phm` additionally verifies
+each one against `upstream_commit`.
 
 ## Why the hashes matter
 
@@ -156,17 +157,20 @@ suspect.
 - **`trace_*.pkl`** — the extracted vehicle point clouds ATLAS injects, 159 MB across
   the three asset directories, with a single file at 97 MiB, near GitHub's per-file
   ceiling. They are **present on disk** so generation runs immediately, but
-  gitignored — which is also their status in the pipeline repo, where they were never
+  gitignored — which was also their status in the pipeline repo, where they were never
   committed either. Regenerate with `build_nuscenes_assets.py` /
   `build_kitti_assets.py`. The sandbox itself does not need them: it consumes the
   derived `.atlastrace` files in `assets/traces/` (6 MB), and only
   `tools/export_traces.py` reads the pickles.
-- **The OSF k6nf2 raw captures** — 375 MB of PCAP and 67 MB of multimode analysis out
-  of a 2.5 GB archive. `validation/osf_k6nf2/` ships the analysis scripts and the
-  small `real_*.npz` summaries they produce; the captures come from the OSF deposit.
+- **The OSF k6nf2 raw captures** — 375 MB of PCAP, 67 MB of multimode analysis and the
+  2.5 GB source archive. These now live **here**, under `validation/osf_k6nf2/`, moved
+  out of the pipeline repo along with the scripts that read them. Gitignored, because
+  of the size and because they are a third party's data; the small `real_*.npz`
+  reference scans derived from them are committed, so the comparison reruns without
+  the download.
 - **`pcdet/`, `mamba/`, `tools/train.py`, the Waymo model configs, `docker/`,
-  `docs/`** — the perception models and their training infrastructure. That is the
-  pipeline repo's job. The one exception is documented in
+  `docs/`** — the perception models and their training infrastructure. That is all the
+  pipeline repo has left. The one exception is documented in
   `eval/pcdet-patches/waymo_dataset-atlas-asr.patch`: ATLAS's per-frame ASR scorer
   lives inside `WaymoDataset.evaluation()` and cannot be lifted out, so it stays
   there and is recorded here as a required patch.

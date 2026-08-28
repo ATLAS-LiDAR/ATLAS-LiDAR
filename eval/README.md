@@ -36,10 +36,13 @@ The last step needs a CUDA toolchain and takes a while; it is the OpenPCDet buil
 anything ATLAS adds. Checkpoints are not in the submodule — get them from the pipeline
 repo's own instructions.
 
-`atlas_generation` here is a symlink to `../atlas`, and `phim/atlas_generation` is the
-submodule's own copy. They are not the same tree: the submodule is pinned to the
-extraction commit, so its copy lacks work that was uncommitted upstream at that point.
-`tools/check_provenance.py --vs-phm` reports exactly which files that affects.
+`atlas_generation` here is a symlink to `../atlas`. The submodule no longer has a copy —
+ATLAS was removed from the pipeline repo once it lived here, so `phim/` is purely the
+perception models plus the one evaluation hook below.
+
+The ATLAS code is still in that repo's *history*, which is how
+`tools/check_provenance.py --vs-phm` verifies this extraction: it reads blobs out of
+commit `a11dc37`, the last one containing them.
 
 Why the symlink: the copied scripts do
 `sys.path.insert(0, dirname(__file__) + "/atlas_generation")` to reach
@@ -61,7 +64,8 @@ the `ATLAS` branch. It is kept here so the logic is versioned on the attack's si
 so it can be reapplied to a different OpenPCDet fork; it applies cleanly to the pipeline
 repo's `public_release` branch.
 
-The rest of that repo's `pcdet/` changes are PHiM/LOT model work and stay there.
+It is also the one place where a change upstream silently changes results here. The rest
+of that repo's `pcdet/` changes are PHiM/LOT model work and stay there.
 
 ## What runs what
 

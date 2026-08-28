@@ -36,6 +36,7 @@ trace_*.pkl
 validation/osf_k6nf2/Moving Target Experiment PCAP file/
 validation/osf_k6nf2/Multimode Analysis/
 validation/osf_k6nf2/*.pcap
+validation/osf_k6nf2/*.zip
 
 # Generated attack data and eval output
 eval/output/
