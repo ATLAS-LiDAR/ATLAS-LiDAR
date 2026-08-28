@@ -22,11 +22,11 @@
  * removal ASR is conditioned on the target being detected in the clean pass,
  * exactly as atlas_injection_eval_only does for its displacement metrics.
  */
-import { configureSensor } from "./src/core/sensor.js";
-import { loadAtlasFrame, loadManifest, toPointFrame } from "./src/io/atlasframe.js";
-import { composeCloud } from "./src/core/compose.js";
-import { detect } from "./src/core/detect.js";
-import { maxIoU, normalizeBox } from "./src/core/iou.js";
+import { configureSensor } from "../src/core/sensor.js";
+import { loadAtlasFrame, loadManifest, toPointFrame } from "../src/io/atlasframe.js";
+import { composeCloud } from "../src/core/compose.js";
+import { detect } from "../src/core/detect.js";
+import { maxIoU, normalizeBox } from "../src/core/iou.js";
 
 const VEHICLE = /car|van|truck|bus|trailer|vehicle/i;
 const PED = /pedestrian|person/i;
@@ -46,12 +46,12 @@ const CONFIGS = {
 const out = [];
 const log = (s) => out.push(s);
 
-const manifest = await loadManifest("assets/frames/manifest.json");
+const manifest = await loadManifest("../assets/frames/manifest.json");
 
 // preload + index every frame once
 const frames = [];
 for (const entry of manifest) {
-  const loaded = await loadAtlasFrame("assets/frames/" + entry.file);
+  const loaded = await loadAtlasFrame("../assets/frames/" + entry.file);
   const sensor = configureSensor(loaded.header.sensor);
   const frame = toPointFrame(loaded, sensor);
   const gts = [];

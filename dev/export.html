@@ -17,14 +17,14 @@
  * Config comes in as a URL-encoded JSON `cfg` parameter, e.g.
  *   export.html?cfg={"scene":"kitti-open-road","mode":"inject",...}
  */
-import { configureSensor } from "./src/core/sensor.js";
-import { configureSpoofer, reachableCells } from "./src/core/spoofer.js";
-import { injectPhantom } from "./src/core/inject.js";
-import { removeReturns } from "./src/core/remove.js";
-import { makePhantom } from "./src/core/phantom.js";
-import { composeCloud } from "./src/core/compose.js";
-import { loadAtlasFrame, loadManifest, toPointFrame } from "./src/io/atlasframe.js";
-import { buildAttackBundle, bundleToBase64 } from "./src/io/export.js";
+import { configureSensor } from "../src/core/sensor.js";
+import { configureSpoofer, reachableCells } from "../src/core/spoofer.js";
+import { injectPhantom } from "../src/core/inject.js";
+import { removeReturns } from "../src/core/remove.js";
+import { makePhantom } from "../src/core/phantom.js";
+import { composeCloud } from "../src/core/compose.js";
+import { loadAtlasFrame, loadManifest, toPointFrame } from "../src/io/atlasframe.js";
+import { buildAttackBundle, bundleToBase64 } from "../src/io/export.js";
 
 function emit(id, text) {
   const el = document.createElement("pre");
@@ -44,9 +44,9 @@ try {
   const params = new URLSearchParams(location.search);
   const cfg = JSON.parse(params.get("cfg") || "{}");
 
-  const manifest = await loadManifest("assets/frames/manifest.json");
+  const manifest = await loadManifest("../assets/frames/manifest.json");
   const entry = manifest.find((m) => m.slug === cfg.scene) || manifest[0];
-  const loaded = await loadAtlasFrame("assets/frames/" + entry.file);
+  const loaded = await loadAtlasFrame("../assets/frames/" + entry.file);
 
   const sensor = configureSensor(cfg.sensor || loaded.header.sensor, {
     hz: cfg.hz ?? 10,

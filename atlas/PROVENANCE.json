@@ -68,12 +68,18 @@
         "generate_data_relative_nuscenes.py": "cfb3724c18446b59fcaf149837b4428555c2c28dc3ec902a8eb534193cc1611b",
         "generate_data_removal.py": "b062d2f7b2a4274bf9135fe334b5f56b17e096883c0bbcaa2dace47b588043c1",
         "generate_data_removal_nuscenes.py": "b42a2bd0a78830fa98468540be39eaa786e68e116187b9f78204051f39ae88ca",
-        "helpers_ptt.py": "99bbd397d7859b0feeab1afadfcb573a1cc89162d5bbf20ad26525d000e2abbb",
+        "helpers_ptt.py": "99bbd397d7859b0feeab1afadfcb573a1cc89162d5bbf20ad26525d000e2abbb"
+      },
+      "local_dir": "atlas",
+      "upstream_dir": "atlas_generation"
+    },
+    {
+      "files": {
         "regen_v1_removal.sh": "95b7e887de44c18dae28d5655034ba049209d6ada1f0056c6fb82068fa1bc67f",
         "run_all_variants_trainval.sh": "f43afa3685921c4de2afe453a496f0b417b347c4292d1c0297b8febf6cf5cea4",
         "run_sched_variants.sh": "72f04d0c19c829328af5a4a49527ca6a8db15553b5c1bf6d5eca46a9af6e02ba"
       },
-      "local_dir": "atlas",
+      "local_dir": "atlas/scripts",
       "upstream_dir": "atlas_generation"
     },
     {
@@ -86,12 +92,7 @@
         "eval_matrix_nuscenes.py": "0f29a07d0963384c3b2c2fb9743d8fcc12b1f85ce49317f78e510287c5258222",
         "make_qualitative_figs.py": "2a96986961bfa174ebbed97dce783b27f0571170509252c2bef85d482914c67e",
         "point_injection.py": "4fd15a308bdeb22c5467b4587a1d7cc375210fdb56812d53106f05b62ba562e8",
-        "point_injection_nuscenes.py": "ae61187067fd301d9e54cc44393257c70ca51f35f3655c205bf9b2865218b044",
-        "run_ablate_intensity.sh": "d07a715974abb28025a987384ea16d09d80c66a8c53a87412e859b596e2c0986",
-        "run_ablate_sweep.sh": "4dc099b22f9c4a0e0316a3834e927729bcc5bd703e1a4a57c3cc97f05e0fa5af",
-        "run_kitti_eval.sh": "300ae5293de98a8ed0097baa2667c76b980f4fe6b4c2991d98950ba3694f349d",
-        "run_kitti_pointrcnn.sh": "e0948cee1be3976708ea3ca063fdf9898c8615993608ec08f17f9f5e3e3037b2",
-        "run_sched_eval.sh": "19d2ad554f96b581af9e7284e63f8700e1feb0c22e4cb63c7440337488222b2b"
+        "point_injection_nuscenes.py": "ae61187067fd301d9e54cc44393257c70ca51f35f3655c205bf9b2865218b044"
       },
       "local_dir": "eval",
       "upstream_dir": "."
@@ -104,6 +105,39 @@
       },
       "local_dir": "eval/cfgs",
       "upstream_dir": "tools/cfgs/dataset_configs"
+    },
+    {
+      "files": {
+        "run_ablate_intensity.sh": "d07a715974abb28025a987384ea16d09d80c66a8c53a87412e859b596e2c0986",
+        "run_ablate_sweep.sh": "4dc099b22f9c4a0e0316a3834e927729bcc5bd703e1a4a57c3cc97f05e0fa5af",
+        "run_kitti_eval.sh": "300ae5293de98a8ed0097baa2667c76b980f4fe6b4c2991d98950ba3694f349d",
+        "run_kitti_pointrcnn.sh": "e0948cee1be3976708ea3ca063fdf9898c8615993608ec08f17f9f5e3e3037b2",
+        "run_sched_eval.sh": "19d2ad554f96b581af9e7284e63f8700e1feb0c22e4cb63c7440337488222b2b"
+      },
+      "local_dir": "eval/scripts",
+      "upstream_dir": "."
+    },
+    {
+      "files": {
+        "ATLAS_REAL_WORLD_VALIDATION.md": "9a88ba3e4e3bbbdac05d7659e34b1c5e8da0ec69fbcbabcfd2df4b37ca344d22",
+        "ATLAS_RESULTS.md": "d6e08b65a0f17135966c829e626adce35b64c571188dc10637a3c839206b43fc",
+        "SUMMARY.md": "1d487b816044a9ad63b5338821be954e1104b6a1e97b68ed22068f00dac7d921",
+        "atlas_eval_metrics_summary.pdf": "0adfae4debd37c680e75458006a93d3e8b3be7731a593eb17b145d442315ba33"
+      },
+      "local_dir": "results",
+      "upstream_dir": "."
+    },
+    {
+      "files": {
+        "injection_1_clean.png": "58494e830aa02c19d1154e9a3de71ec94d7f373cceea6a72de2d262db2290e03",
+        "injection_2_injected.png": "585566a0a7fbe67791704a48b6ad4d2c7b93cce693845ce5d0f452f96358dce6",
+        "injection_3_predicted.png": "850c6d4f9ff56f64dc8081be88a69e3110a0ec56939bf5ab5a9eabcd11aa2443",
+        "removal_1_clean.png": "80976114943f4ce6e15fcf0856eeba1521deec2a62d2e245077ee73d410a6531",
+        "removal_2_removed.png": "9b919e1a50c622aafc25d7ac45042e8508a033edb005555e54fea74f320ffc30",
+        "removal_3_predicted.png": "51dd2323d11f9538ff3e3f3e6ba1f3431b55463d453a844bd4c7d2b683877b5a"
+      },
+      "local_dir": "results/qualitative_figs",
+      "upstream_dir": "qualitative_figs"
     },
     {
       "files": {
@@ -130,28 +164,6 @@
       },
       "local_dir": "validation/osf_k6nf2",
       "upstream_dir": "osf_k6nf2"
-    },
-    {
-      "files": {
-        "ATLAS_REAL_WORLD_VALIDATION.md": "9a88ba3e4e3bbbdac05d7659e34b1c5e8da0ec69fbcbabcfd2df4b37ca344d22",
-        "ATLAS_RESULTS.md": "d6e08b65a0f17135966c829e626adce35b64c571188dc10637a3c839206b43fc",
-        "SUMMARY.md": "1d487b816044a9ad63b5338821be954e1104b6a1e97b68ed22068f00dac7d921",
-        "atlas_eval_metrics_summary.pdf": "0adfae4debd37c680e75458006a93d3e8b3be7731a593eb17b145d442315ba33"
-      },
-      "local_dir": "results",
-      "upstream_dir": "."
-    },
-    {
-      "files": {
-        "injection_1_clean.png": "58494e830aa02c19d1154e9a3de71ec94d7f373cceea6a72de2d262db2290e03",
-        "injection_2_injected.png": "585566a0a7fbe67791704a48b6ad4d2c7b93cce693845ce5d0f452f96358dce6",
-        "injection_3_predicted.png": "850c6d4f9ff56f64dc8081be88a69e3110a0ec56939bf5ab5a9eabcd11aa2443",
-        "removal_1_clean.png": "80976114943f4ce6e15fcf0856eeba1521deec2a62d2e245077ee73d410a6531",
-        "removal_2_removed.png": "9b919e1a50c622aafc25d7ac45042e8508a033edb005555e54fea74f320ffc30",
-        "removal_3_predicted.png": "51dd2323d11f9538ff3e3f3e6ba1f3431b55463d453a844bd4c7d2b683877b5a"
-      },
-      "local_dir": "results/qualitative_figs",
-      "upstream_dir": "qualitative_figs"
     }
   ],
   "notes": {

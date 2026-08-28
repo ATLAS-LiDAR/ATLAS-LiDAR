@@ -13,14 +13,14 @@
  *               P_TWO = 0 and the occlusion resolution has nothing to draw
  *   removal   - p_remove = 1, scan gate forced open, zero aim jitter
  */
-import { configureSensor } from "./src/core/sensor.js";
-import { cartToSpherical, azimuthCellIndex, nearestBeamIndex } from "./src/core/polar.js";
-import { loadAtlasFrame, toPointFrame } from "./src/io/atlasframe.js";
-import { loadTraceLibrary, allTraces } from "./src/io/traces.js";
-import { placeTraceRelative } from "./src/core/atlas-inject.js";
-import { injectPhantom } from "./src/core/inject.js";
-import { ahfrRemoval } from "./src/core/atlas-removal.js";
-import { configureSpoofer } from "./src/core/spoofer.js";
+import { configureSensor } from "../src/core/sensor.js";
+import { cartToSpherical, azimuthCellIndex, nearestBeamIndex } from "../src/core/polar.js";
+import { loadAtlasFrame, toPointFrame } from "../src/io/atlasframe.js";
+import { loadTraceLibrary, allTraces } from "../src/io/traces.js";
+import { placeTraceRelative } from "../src/core/atlas-inject.js";
+import { injectPhantom } from "../src/core/inject.js";
+import { ahfrRemoval } from "../src/core/atlas-removal.js";
+import { configureSpoofer } from "../src/core/spoofer.js";
 
 /** Matches ZeroRng in the Python side: every draw is the deterministic extreme. */
 const zeroRng = { random: () => 0, normal: () => 0 };
@@ -42,12 +42,12 @@ function checksumPoints(p, quantum = 0.005) {
 
 const frameCache = new Map();
 const traceCache = new Map();
-const manifest = await (await fetch("assets/frames/manifest.json")).json();
+const manifest = await (await fetch("../assets/frames/manifest.json")).json();
 const bySlug = Object.fromEntries(manifest.map((m) => [m.slug, m]));
 
 async function getFrame(slug) {
   if (!frameCache.has(slug)) {
-    const loaded = await loadAtlasFrame("assets/frames/" + bySlug[slug].file);
+    const loaded = await loadAtlasFrame("../assets/frames/" + bySlug[slug].file);
     const sensor = configureSensor(loaded.header.sensor); // strongest -> pTwo = 0
     frameCache.set(slug, { loaded, sensor, frame: toPointFrame(loaded, sensor) });
   }
@@ -57,7 +57,7 @@ async function getFrame(slug) {
 async function getTraces(dataset, difficulty) {
   const key = dataset + "-" + difficulty;
   if (!traceCache.has(key)) {
-    const lib = await loadTraceLibrary(`assets/traces/${key}.atlastrace`);
+    const lib = await loadTraceLibrary(`../assets/traces/${key}.atlastrace`);
     traceCache.set(key, allTraces(lib));
   }
   return traceCache.get(key);

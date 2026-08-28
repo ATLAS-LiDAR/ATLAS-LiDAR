@@ -2,7 +2,7 @@
 # Run the ATLAS-Sandbox test suite in headless Chrome.
 #
 # There is no node on this machine, so the loop is: serve the repo over HTTP
-# (ES modules need a real origin), load tests.html in headless Chrome, and grep
+# (ES modules need a real origin), load dev/tests.html in headless Chrome, and grep
 # the DOM for the marker the harness writes. Exits nonzero if any test fails.
 set -uo pipefail
 
@@ -45,7 +45,7 @@ DOM="$(timeout "$TIMEOUT" "$CHROME" \
   --user-data-dir="$PROFILE" \
   --virtual-time-budget=60000 \
   --run-all-compositor-stages-before-draw \
-  --dump-dom "http://127.0.0.1:$PORT/tests.html?${1:-}" 2>/dev/null)"
+  --dump-dom "http://127.0.0.1:$PORT/dev/tests.html?${1:-}" 2>/dev/null)"
 CHROME_RC=$?
 
 if [[ $CHROME_RC -ne 0 && $CHROME_RC -ne 1 ]]; then

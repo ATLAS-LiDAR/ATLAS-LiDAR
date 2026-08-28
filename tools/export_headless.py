@@ -2,7 +2,7 @@
 """Batch-run attacks by driving the sandbox in headless Chrome.
 
 The attack physics lives in JS. Reimplementing it in Python would give two
-implementations that drift, so instead this drives export.html headlessly and
+implementations that drift, so instead this drives dev/export.html headlessly and
 reads the resulting bundle back out of the DOM. The JS core stays the single
 source of truth for what an attack does.
 
@@ -62,7 +62,7 @@ def element(dom, tag, ident):
 
 
 def run_one(chrome, port, cfg, timeout=180):
-    url = "http://127.0.0.1:%d/export.html?cfg=%s" % (
+    url = "http://127.0.0.1:%d/dev/export.html?cfg=%s" % (
         port,
         urllib.parse.quote(json.dumps(cfg, separators=(",", ":"))),
     )

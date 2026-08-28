@@ -2,7 +2,7 @@
 """Extract the test report and completion marker from a --dump-dom capture.
 
 Chrome's --dump-dom emits <script> source verbatim, so a naive grep for the
-completion marker matches the fallback string literal inside tests.html rather
+completion marker matches the fallback string literal inside dev/tests.html rather
 than the element the harness actually wrote. Anchor on the elements by id.
 
 stdout: the human-readable report.

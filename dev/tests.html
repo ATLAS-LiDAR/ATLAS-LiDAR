@@ -24,7 +24,7 @@
     document.body.appendChild(m);
   });
   try {
-    await import("./test/all.js");
+    await import("../test/all.js");
   } catch (e) {
     const pre = document.createElement("pre");
     pre.textContent = "LOAD ERROR: " + (e && e.stack ? e.stack : e);

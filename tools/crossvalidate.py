@@ -240,7 +240,7 @@ def find_chrome():
 
 
 def sandbox_run(chrome, port, cfgs):
-    url = "http://127.0.0.1:%d/crossvalidate.html?cfg=%s" % (
+    url = "http://127.0.0.1:%d/dev/crossvalidate.html?cfg=%s" % (
         port, urllib.parse.quote(json.dumps(cfgs, separators=(",", ":")))
     )
     prof = tempfile.mkdtemp()
