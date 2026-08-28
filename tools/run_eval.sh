@@ -30,10 +30,30 @@
 # is your call, since other envs may lean on them.
 set -euo pipefail
 
+# WHERE THE PIECES LIVE, AFTER THE SPLIT
+# The eval scripts moved into this repo (eval/), so they are no longer at $PHM's root
+# the way they were when this was written; $SANDBOX/eval holds them now.
+#
+# $PHM is NOT the submodule, and cannot be. cwd decides where pcdet resolves the KITTI
+# dataset root, and a submodule only ever contains code - eval/phim/data/kitti has
+# ImageSets and nothing else. Point this at a checkout with KITTI actually installed
+# (calib, velodyne, kitti_infos_*.pkl), which for the pipeline repo means the NAS mount.
+#
+# Getting this wrong fails in the worst possible way: KittiDataset loads 0 samples,
+# get_calib asserts on a missing file, and eval_matrix_kitti.py's `except Exception:
+# continue` counts every frame as an injection miss - so you get a clean-looking
+# ASR=0.0000 (0/N) instead of an error. Hence the preflight checks below.
 SANDBOX="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PHM="${PHM_ROOT:-$HOME/rsch/Polar-Hierarchical-Mamba}"
+CKPT="${CKPT_DIR:-$PHM/data/kitti/checkpoints}"
 ENV_PY="${ATLAS_PY:-$HOME/miniconda3/envs/atlas/bin/python}"
 SP="$("$ENV_PY" -c 'import site,sys; print(site.getsitepackages()[0])')"
+
+die() { echo "run_eval: $1" >&2; exit 1; }
+[[ -d "$PHM/tools/cfgs" ]]              || die "no $PHM/tools/cfgs - set PHM_ROOT to a Polar-Hierarchical-Mamba checkout"
+[[ -d "$PHM/data/kitti/training/calib" ]] || die "no KITTI calib under $PHM/data/kitti - the dataset must be installed there, or ASR comes back a silent 0"
+[[ -f "$PHM/data/kitti/kitti_infos_val.pkl" ]] || die "no kitti_infos_val.pkl under $PHM/data/kitti - run the pipeline repo's dataset preparation first"
+[[ -d "$CKPT" ]]                        || die "no checkpoints at $CKPT - set CKPT_DIR"
 
 BUNDLES="${1:?usage: run_eval.sh '<glob of .atlasattack>' [model]}"
 MODEL="${2:-pointpillar}"
@@ -47,10 +67,12 @@ python3 "$SANDBOX/tools/import_attack.py" "$BUNDLES" \
 
 echo
 echo "== scoring with the real $MODEL checkpoint"
+# cwd must be $PHM/tools: eval_matrix_kitti.py resolves cfgs/ relative to it.
+# The script itself now lives here, in this repo.
 cd "$PHM/tools"
-PYTHONPATH="$SP" "$ENV_PY" ../eval_matrix_kitti.py \
+PYTHONPATH="$SP" "$ENV_PY" "$SANDBOX/eval/eval_matrix_kitti.py" \
   --atlas_dir "$WORK" \
-  --ckpt_dir "$PHM/data/kitti/checkpoints" \
+  --ckpt_dir "$CKPT" \
   --out_csv "$WORK/asr.csv" \
   --work_dir "$WORK/logs" \
   --only_model "$MODEL" \
