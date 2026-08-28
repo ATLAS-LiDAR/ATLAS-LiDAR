@@ -1,4 +1,7 @@
 {
+  "deliberately_unpublished": {
+    "results/rebuttal.md": "OpenReview review responses, quoting reviewers who did not consent to publication. Kept on disk and gitignored, and purged from this repo's history rather than merely deleted at the tip. Note it remains in the pipeline repo's public history from 114e21d onward, which predates this split."
+  },
   "files": {
     "assets_kitti/kitti_azimuth_res.npy": {
       "local": "56f4f68557200863aa7389a6d2cb7585ba2a68933812e505254e1d8857f0e39e",
@@ -133,8 +136,7 @@
         "ATLAS_REAL_WORLD_VALIDATION.md": "9a88ba3e4e3bbbdac05d7659e34b1c5e8da0ec69fbcbabcfd2df4b37ca344d22",
         "ATLAS_RESULTS.md": "d6e08b65a0f17135966c829e626adce35b64c571188dc10637a3c839206b43fc",
         "SUMMARY.md": "1d487b816044a9ad63b5338821be954e1104b6a1e97b68ed22068f00dac7d921",
-        "atlas_eval_metrics_summary.pdf": "0adfae4debd37c680e75458006a93d3e8b3be7731a593eb17b145d442315ba33",
-        "rebuttal.md": "11346915d4b24fd09c4fec6f1fe6bbed7fe22cb643599de6e7eb6af5bd8337b6"
+        "atlas_eval_metrics_summary.pdf": "0adfae4debd37c680e75458006a93d3e8b3be7731a593eb17b145d442315ba33"
       },
       "local_dir": "results",
       "upstream_dir": "."
