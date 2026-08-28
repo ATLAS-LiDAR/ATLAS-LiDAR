@@ -1,7 +1,7 @@
 # Run records, not portable scripts
 
-These are the exact shell drivers used to produce the numbers in `results/`. They are
-kept verbatim — hashes are in `atlas/PROVENANCE.json` — because "here is the command
+These are the exact shell drivers used to produce the numbers reported in the paper.
+They are kept verbatim — hashes are in `atlas/PROVENANCE.json` — because "here is the command
 that produced Table 1" is worth more than a tidied-up version that was never actually
 run.
 

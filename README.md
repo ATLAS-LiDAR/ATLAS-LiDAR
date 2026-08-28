@@ -16,7 +16,6 @@ sensor spins.
 | `atlas/` | **The attack.** A-HFR sector removal and trace-based injection, ~1,400 lines, **numpy only** — no torch, no CUDA, no checkpoints. Plus the dataset generators. |
 | `eval/` | Detector evaluation: attack success rate against clean mAP/NDS. Needs torch and `eval/phim`. |
 | `validation/` | Real-world fidelity check against OSF deposit `k6nf2` — does ATLAS's output resemble an actual spoofer's? |
-| `results/` | The reported numbers, the real-world validation writeup, and the BEV figures. |
 | `index.html`, `src/`, `assets/` | The sandbox. No build step, no Node. |
 | `dev/` | Test and export harnesses. See [dev/README.md](dev/README.md). |
 | `tools/` | Development and CI scripts. |
@@ -62,33 +61,14 @@ repo's history:
 
 ```bash
 tools/check_provenance.py --vs-phm
-# all 75 file(s) match: the extraction is reproducible from upstream history
+# all 65 file(s) match: the extraction is reproducible from upstream history
 ```
 
 Both run in CI. Details in [atlas/PROVENANCE.md](atlas/PROVENANCE.md).
-
-## Documentation
-
-| | |
-|---|---|
-| [docs/sandbox.md](docs/sandbox.md) | What the visualizer shows, driving sequences, attacker hardware models, architecture |
-| [docs/fidelity.md](docs/fidelity.md) | Where the constants come from, cross-validation, and where the port deliberately differs |
-| [docs/notes.md](docs/notes.md) | Findings worth carrying back to the pipeline, and known limitations |
-| [docs/data.md](docs/data.md) | The committed frames and traces, and their sources |
-| [atlas/PROVENANCE.md](atlas/PROVENANCE.md) | What was copied from where, and how it is pinned |
-| [eval/README.md](eval/README.md) | The evaluation harness and its one required patch to pcdet |
-
-## Sandbox versions
-
-| | | |
-|---|---|---|
-| **v1** | tag `v1` | Barebones demo: scan lattice, spoofer hardware physics, realizability verdict. Frozen and citable. |
-| **v2** | `main` | **The ATLAS visualizer.** ATLAS's own algorithms, ported, with the sensor spinning in real time. |
-| **v3** | planned | Visualize *any* raw-signal spoofing attack, not just ATLAS. |
 
 ## Data and licensing
 
 `assets/` contains point clouds derived from KITTI (CC BY-NC-SA 4.0) and nuScenes,
 committed so the sandbox runs from a clean clone. Both datasets' terms restrict
-redistribution and commercial use — see [docs/data.md](docs/data.md). Regenerate them
-locally with `tools/export_frames.py` instead if you would rather not rely on that.
+redistribution and commercial use. Regenerate them locally with
+`tools/export_frames.py` instead if you would rather not rely on that.

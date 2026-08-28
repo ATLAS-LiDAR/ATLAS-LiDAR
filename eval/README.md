@@ -78,8 +78,8 @@ of that repo's `pcdet/` changes are PHiM/LOT model work and stay there.
 | `cache_injection_preds.py` | caches detector predictions so the matrix can be re-scored without re-running inference |
 | `ablate_intensity_nuscenes.py` | intensity-calibration ablation |
 | `analyze_schedule_variants.py` | attack-schedule comparison, Wilcoxon signed-rank; needs only numpy + scipy |
-| `make_qualitative_figs.py` | the BEV figures in `results/qualitative_figs/` |
-| `run_*.sh` | the drivers that were actually used for the reported runs |
+| `make_qualitative_figs.py` | the BEV figures for the paper (written wherever you point `--out_dir`) |
+| `scripts/` | the drivers actually used for the reported runs, kept verbatim — see [scripts/README.md](scripts/README.md) |
 | `cfgs/` | the three dataset configs added for ATLAS generation, from the pipeline repo's `tools/cfgs/dataset_configs/` |
 
 `cache_injection_preds.py` also inserts `<repo>/tools` on `sys.path`, which resolved

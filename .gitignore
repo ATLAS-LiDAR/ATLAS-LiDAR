@@ -41,11 +41,21 @@ validation/osf_k6nf2/*.zip
 # Generated attack data and eval output
 eval/output/
 eval/*.pkl
-results/*_cache/
 
-# REVIEW CORRESPONDENCE IS NOT PUBLISHED
-# results/rebuttal.md is the OpenReview response, quoting reviewers who did not
-# consent to publication. Kept on disk, and purged from this repo's history rather
-# than just deleted at the tip. It does remain in the pipeline repo's public history
-# from 114e21d onward, which predates this split.
-results/rebuttal.md
+# WORKING NOTES ARE LOCAL-ONLY
+# docs/ held the long-form notes that used to be inline in the README: how the sandbox
+# works, where the constants come from, findings, limitations, data sources. Useful to
+# whoever is working on this, not to someone who just wants the attack. README.md and
+# the per-directory READMEs are what ship.
+docs/
+
+# RESULTS ARE LOCAL-ONLY
+# results/ held the paper's reported numbers, the real-world validation writeup, the
+# metrics PDF and the BEV figures. Deliberately not published from this repo - the
+# results belong with the paper, and this repo is the attack and its harness.
+#
+# The directory is still on disk and untouched; it is just not tracked. That includes
+# rebuttal.md, the OpenReview response, which was never published here (it quotes
+# reviewers who did not consent) and was purged from this repo's history rather than
+# only deleted at the tip.
+results/

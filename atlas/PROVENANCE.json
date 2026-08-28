@@ -1,6 +1,7 @@
 {
   "deliberately_unpublished": {
-    "results/rebuttal.md": "OpenReview review responses, quoting reviewers who did not consent to publication. Kept on disk and gitignored, and purged from this repo's history rather than merely deleted at the tip. Note it remains in the pipeline repo's public history from 114e21d onward, which predates this split."
+    "docs/": "Long-form working notes, split out of the README when it was trimmed: how the sandbox works, where the calibration constants come from, findings, limitations, data sources. Kept local - useful to whoever is working on this, not to someone who wants the attack. README.md and the per-directory READMEs are what ship.",
+    "results/": "The paper's reported numbers, the real-world validation writeup, the metrics PDF and the BEV figures. Mirrored here initially, then withheld: results belong with the paper, and this repo is the attack and its harness. Still on disk and gitignored. Includes rebuttal.md, the OpenReview response, which was never published here - it quotes reviewers who did not consent - and was purged from this repo's history rather than only deleted at the tip. Note rebuttal.md and the rest of results/ remain in the pipeline repo's public history from 114e21d onward, which predates this split."
   },
   "files": {
     "assets_kitti/kitti_azimuth_res.npy": {
@@ -116,28 +117,6 @@
       },
       "local_dir": "eval/scripts",
       "upstream_dir": "."
-    },
-    {
-      "files": {
-        "ATLAS_REAL_WORLD_VALIDATION.md": "9a88ba3e4e3bbbdac05d7659e34b1c5e8da0ec69fbcbabcfd2df4b37ca344d22",
-        "ATLAS_RESULTS.md": "d6e08b65a0f17135966c829e626adce35b64c571188dc10637a3c839206b43fc",
-        "SUMMARY.md": "1d487b816044a9ad63b5338821be954e1104b6a1e97b68ed22068f00dac7d921",
-        "atlas_eval_metrics_summary.pdf": "0adfae4debd37c680e75458006a93d3e8b3be7731a593eb17b145d442315ba33"
-      },
-      "local_dir": "results",
-      "upstream_dir": "."
-    },
-    {
-      "files": {
-        "injection_1_clean.png": "58494e830aa02c19d1154e9a3de71ec94d7f373cceea6a72de2d262db2290e03",
-        "injection_2_injected.png": "585566a0a7fbe67791704a48b6ad4d2c7b93cce693845ce5d0f452f96358dce6",
-        "injection_3_predicted.png": "850c6d4f9ff56f64dc8081be88a69e3110a0ec56939bf5ab5a9eabcd11aa2443",
-        "removal_1_clean.png": "80976114943f4ce6e15fcf0856eeba1521deec2a62d2e245077ee73d410a6531",
-        "removal_2_removed.png": "9b919e1a50c622aafc25d7ac45042e8508a033edb005555e54fea74f320ffc30",
-        "removal_3_predicted.png": "51dd2323d11f9538ff3e3f3e6ba1f3431b55463d453a844bd4c7d2b683877b5a"
-      },
-      "local_dir": "results/qualitative_figs",
-      "upstream_dir": "qualitative_figs"
     },
     {
       "files": {

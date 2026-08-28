@@ -138,7 +138,9 @@ across verbatim, and `PROVENANCE.json` records a hash for each under `mirrors`:
 | `eval/` | detector evaluation, ablations, qualitative figures | repo root |
 | `eval/cfgs/` | the three dataset configs added for ATLAS generation | `tools/cfgs/dataset_configs/` |
 | `validation/osf_k6nf2/` | real-world fidelity validation against OSF deposit k6nf2 | `osf_k6nf2/` |
-| `results/` | `ATLAS_RESULTS.md`, `ATLAS_REAL_WORLD_VALIDATION.md`, `SUMMARY.md`, the metrics PDF and the BEV figures | repo root |
+
+The paper's writeups and figures came across too, into `results/`, and were then
+withheld from publication — see below.
 
 These are flat in `atlas/` rather than a subdirectory on purpose: the generators use
 sibling imports (`import nuscenes_atlas_common as C`, `import helpers_ptt`), so a flat
@@ -174,15 +176,17 @@ suspect.
   `eval/pcdet-patches/waymo_dataset-atlas-asr.patch`: ATLAS's per-frame ASR scorer
   lives inside `WaymoDataset.evaluation()` and cannot be lifted out, so it stays
   there and is recorded here as a required patch.
-- **`results/rebuttal.md`** — the OpenReview response. It came across with the rest of
-  `results/`, then was deliberately withheld from publication: it quotes reviewers who
-  did not consent to that. Kept on disk, gitignored, and purged from this repo's
-  history rather than merely deleted at the tip. `deliberately_unpublished` in
-  `PROVENANCE.json` records the decision so the gap in the mirrored `results/` group
-  is explained rather than mysterious.
+- **`results/`** — the paper's reported numbers, the real-world validation writeup, the
+  metrics PDF and the BEV figures. Mirrored here initially, then withheld: results
+  belong with the paper, and this repo is the attack and its harness. Still on disk,
+  gitignored.
 
-  Two honest caveats. It is still in the pipeline repo's **public** history from
-  `114e21d` onward, which predates this split, so withholding it here narrows exposure
-  rather than undoing it. And `SUMMARY.md` links to it; that link now dangles, which is
-  the deliberate choice — `SUMMARY.md` is mirrored byte-for-byte and editing it to fix
-  the link would forfeit exactly the guarantee this file exists to make.
+  `rebuttal.md` is the strongest case of this. It is the OpenReview response, quoting
+  reviewers who did not consent to publication, so it was purged from this repo's
+  history rather than merely deleted at the tip. One honest caveat: it — and the rest of
+  `results/` — remain in the pipeline repo's **public** history from `114e21d` onward,
+  which predates this split. Withholding them here narrows exposure rather than undoing
+  it.
+
+  `deliberately_unpublished` in `PROVENANCE.json` records the decision, so the absence
+  is documented rather than looking like something went missing.
