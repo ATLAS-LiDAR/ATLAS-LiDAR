@@ -2,7 +2,7 @@
 
 A LiDAR spoofing attack, and an interactive sandbox for it.
 
-**[Try it in your browser →](https://meilongzhang.github.io/ATLAS-LiDAR/)**
+**[Try it in your browser →](https://atlas-lidar.github.io/ATLAS-LiDAR/)**
 
 ATLAS injects a real vehicle's returns into a LiDAR scan, and deletes returns from a
 sector to make a real vehicle disappear. This repository holds the attack, everything
