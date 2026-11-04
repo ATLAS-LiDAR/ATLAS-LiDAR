@@ -33,8 +33,10 @@ for s in pick:
             break
         if fr.get('spoof_gt') is None:
             continue
-        s0, e0 = int(fr['final_spoof_start_index']), int(fr['final_spoof_end_index'])
         n_att += 1
+        if 'final_spoof_start_index' not in fr:      # removal / baseline frame: no injected points to check
+            continue
+        s0, e0 = int(fr['final_spoof_start_index']), int(fr['final_spoof_end_index'])
         if e0 > s0:
             I = p[s0:e0, 3]
             n_sp += len(I); n_hi += int((I > 1.0).sum()); imax = max(imax, float(I.max()))
