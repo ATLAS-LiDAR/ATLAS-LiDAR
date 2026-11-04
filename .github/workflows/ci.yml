@@ -51,6 +51,11 @@ jobs:
       - name: Byte-compile the generation and evaluation layers
         run: python3 -m compileall -q -x phim atlas eval validation
 
+      # The evaluation harness's scheduling, manifests and scoring, with detectors and
+      # subprocesses mocked out: numpy only (one rotated-IoU test skips without shapely).
+      - name: Evaluation harness unit tests
+        run: python3 -m unittest discover -s eval/harness/tests
+
       - name: Unit tests (headless Chrome)
         run: ./run-tests.sh
 

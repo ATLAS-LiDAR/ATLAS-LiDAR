@@ -1,0 +1,2 @@
+# Patches must apply byte-for-byte; some upstream files they touch use CRLF.
+*.patch -text
