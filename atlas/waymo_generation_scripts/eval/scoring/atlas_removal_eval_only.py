@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# CVPR copy of PTT/atlas_removal_eval_only.py; only change: target_box_7 also reads the flat target_box_* fields
+# written by the rebuttal/CVPR removal and baseline generators; Python 3.8 dict merges ({**a, **b} for a | b).
 """ATLAS point-removal *eval-only* metrics.
 
 This script does **NO inference**. It consumes cached per-segment predictions
@@ -477,8 +479,8 @@ def build_clean_index(clean_path, atlas_frames, logger):
 def stats_block(values):
     values = np.asarray(values, dtype=np.float64)
     if values.size == 0:
-        return {k: None for k in
-                ('mean', 'std', 'min', 'q1', 'median', 'q3', 'max')} | {'count': 0}
+        return {**{k: None for k in
+                ('mean', 'std', 'min', 'q1', 'median', 'q3', 'max')}, 'count': 0}
     return {
         'count': int(values.size),
         'mean': float(np.mean(values)),
@@ -495,8 +497,8 @@ def score_statistics(scores):
     """Original scripts' fp-score stat block (kept for the preserved metrics)."""
     values = np.asarray(scores, dtype=np.float64)
     if values.size == 0:
-        return {k: None for k in
-                ('mean', 'std', 'min', 'q25', 'median', 'q75', 'max')} | {'count': 0}
+        return {**{k: None for k in
+                ('mean', 'std', 'min', 'q25', 'median', 'q75', 'max')}, 'count': 0}
     return {
         'count': int(values.size),
         'mean': float(np.mean(values)),
@@ -533,6 +535,11 @@ def target_box_7(record):
     """7-dim target (victim) box from a removal record, or None."""
     tb = record.get('target_box')
     if tb is None:
+        # rebuttal/CVPR removal + baseline annos store the box as flat fields (same box as the frame's spoof_gt)
+        keys = ('target_box_x', 'target_box_y', 'target_box_z', 'target_box_length', 'target_box_width',
+                'target_box_height', 'target_box_yaw')
+        if all(record.get(k) is not None for k in keys):
+            return np.array([record[k] for k in keys], dtype=np.float32)
         return None
     return to_numpy(tb, np.float32).reshape(-1)[:7]
 
