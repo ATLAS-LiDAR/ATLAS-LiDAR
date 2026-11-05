@@ -45,8 +45,8 @@ checkpoint. "6 settings" = `{global,rel_fixed}_{easy,medium,hard}`.
    (OpenPCDet val `result.pkl`, matched by frame_id). Effective robustness is a fit across all detectors' jsons.
    Every scoring design choice (fired vs all-valid frames, argmax vs any-match, tau_f vs fixed thresholds, track
    variants) is computed and stored as a separate key; pick the paper's key when building tables.
-   Validation (2026-11-05): injection path reproduces `atlas_metrics` raw ASR (CP4F GT e36, global_hard: 0.4768 vs
-   0.4772). Removal path and `paired_diff.py` (joint segment bootstrap of A - B) are still being validated.
+   Validated (2026-11-05): raw ASR reproduces `atlas_metrics` exactly (global_hard: CP4F GT e36 0.47682, MSF4 0.55931,
+   same 4788 instances); removal path and `paired_diff.py` (joint segment bootstrap of A - B) run end to end.
 4. Multi-frame detectors: build history from the stored frames of the same dataset (not from raw Waymo), as
    `eval/eval_cp4f.sh` does; for `pose_noise_*` set `ATLAS_POSE_OVERRIDE=<dataset>/metrics/pose_noise.pkl`
    (applied to history alignment only).
