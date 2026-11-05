@@ -102,6 +102,10 @@ def main():
             break
         dst, dsa = a.out / "dataset" / f"{seg}.pkl", a.out / "annos" / f"{seg}_a.pkl"
         if dst.is_file() and dsa.is_file():
+            if a.perturbation == "pose_noise":   # recover sidecar entries lost if a previous run was killed
+                for li, fr in enumerate(pickle.load(open(dst, "rb"))):
+                    if "pose_true" in fr:
+                        pose_side[(seg, li)] = np.asarray(fr["pose"])
             log.info("skip %s (done)", seg); continue
         ref = pickle.load(open(a.reference / "dataset" / f"{seg}.pkl", "rb"))
         n = len(mf_idx[seg])
@@ -149,18 +153,24 @@ def main():
                          "perturbed": m is not None, "n_points_before": before[li], "n_points_after": len(pts[li]),
                          "target_active": fr.get("spoof_gt") is not None,
                          **{k: v for k, v in (m or {}).items() if np.isscalar(v)}})
-        tmp = dst.with_suffix(".tmp")
-        pickle.dump(frames, open(tmp, "wb")); os.replace(tmp, dst)
-        shutil.copy2(a.reference / "annos" / f"{seg}_a.pkl", dsa)
         keys = sorted({k for r in rows for k in r})
-        with open(a.out / "metrics/frames" / f"{seg}_frames.csv", "w", newline="") as f:
+        fcsv = a.out / "metrics/frames" / f"{seg}_frames.csv"
+        with open(fcsv.with_suffix(".tmp"), "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=keys); w.writeheader(); w.writerows(rows)
+        os.replace(fcsv.with_suffix(".tmp"), fcsv)
+        shutil.copy2(a.reference / "annos" / f"{seg}_a.pkl", dsa.with_suffix(".tmp")); os.replace(dsa.with_suffix(".tmp"), dsa)
+        tmp = dst.with_suffix(".tmp")
+        with open(tmp, "wb") as f:
+            pickle.dump(frames, f)
+        os.replace(tmp, dst)
         log.info("[%d/%d] %s: %d frames, %d perturbed", si + 1, len(segs), seg, n, len(metas))
     if a.perturbation == "pose_noise":
         old = a.out / "metrics/pose_noise.pkl"
         if old.is_file():
             pose_side = {**pickle.load(open(old, "rb")), **pose_side}
-        pickle.dump(pose_side, open(old, "wb"))
+        with open(old.with_suffix(".tmp"), "wb") as f:
+            pickle.dump(pose_side, f)
+        os.replace(old.with_suffix(".tmp"), old)
     man["status"] = "smoke" if a.max_segments else "completed"; man["completed_utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     json.dump(man, open(a.out / "metrics/run_manifest.json", "w"), indent=1)
 

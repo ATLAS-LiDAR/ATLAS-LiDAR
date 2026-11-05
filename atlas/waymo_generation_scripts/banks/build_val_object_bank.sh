@@ -10,6 +10,7 @@
 # Cyclists are rare in Waymo, hence stride 1 for them.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BANKS_SRC="$HERE"   # config.sh overwrites HERE with its own dir
 source "$HERE/../config.sh"
 # the builder excludes the segments whose <segment>.pkl exists in --exclude_dataset_dir: make that list from the file
 EX=$(mktemp -d); trap 'rm -rf "$EX"' EXIT
@@ -17,9 +18,9 @@ while read -r s; do [[ -n $s ]] && : > "$EX/$s.pkl"; done < "$DATA_DIR/segments_
 cd "$OPENPCDET"; export PYTHONUNBUFFERED=1
 COMMON=(--openpcdet "$OPENPCDET" --cfg "$CP_SF_CFG" --data_path "$WAYMO_ROOT" --exclude_dataset_dir "$EX"
         --max_range 60 --min_points 5 --seed 42)
-python "$HERE/build_val_object_bank.py" "${COMMON[@]}" --out_dir "$BANK_DIR/vehicle" \
+python "$BANKS_SRC/build_val_object_bank.py" "${COMMON[@]}" --out_dir "$BANK_DIR/vehicle" \
     --classes Vehicle --frame_stride 5 --trace_band Vehicle:hard:500:1000:300
-python "$HERE/build_val_object_bank.py" "${COMMON[@]}" --out_dir "$BANK_DIR/cyclist" \
+python "$BANKS_SRC/build_val_object_bank.py" "${COMMON[@]}" --out_dir "$BANK_DIR/cyclist" \
     --classes Cyclist --frame_stride 1 \
     --trace_band Cyclist:easy:30:100:300 --trace_band Cyclist:hard:100:300:300
 echo Done.

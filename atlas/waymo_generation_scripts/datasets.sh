@@ -60,6 +60,11 @@ spec () {
       # ---- viewpoint-consistent phantom: points re-sampled perpendicular to each ray every frame (0.05 m) ----
       global_medium_att_view_seed42|global_hard_att_view_seed42)
           spec "${n%_view_seed42}_seed42"; VIEW=0.05; return ;;
+      # ---- spray threshold ablation: spray_l1 with min_speed 8 m/s instead of 15 ----
+      # (only 15/50 segments and 2% of attack-frame vehicle boxes exceed 15 m/s; 8 m/s -> ~6%). Frame-paired with spray_l1.
+      spray_l1_v8_seed42)
+          GEN=scene; ARGS=(--perturbation spray --params '{"level": 1, "min_speed": 8.0}' --reference $OUT_ROOT/${SCENE_REF:-atlas_removal_az20_seed42})
+          NOTE="spray_l1 with min_speed 8 m/s (ablation); needs \$OUT_ROOT/${SCENE_REF:-atlas_removal_az20_seed42}" ;;
       # ---- scene-level perturbations (gen_scene_perturb.py); targets copied from atlas_removal_az20_seed42 ----
       spray_l1_seed42|spray_l2_seed42|crosstalk_006_seed42|crosstalk_010_seed42|fog_a002_seed42|fog_a006_seed42|blackout_3_seed42|blackout_10_seed42|stuck_4_seed42|stuck_10_seed42|delayed_1_seed42|delayed_3_seed42|dropped_025_seed42|dropped_050_seed42|pose_noise_low_seed42|pose_noise_high_seed42)
           GEN=scene; local op=${n%_seed42}; local lv=${op##*_}; op=${op%_*}; local P
@@ -115,6 +120,6 @@ new_datasets () {
     for p in global relative; do for b in easy medium; do echo abl_cyc_atlas_${p}_${b}_seed42 abl_cyc_atlas_${p}_${b}_att_seed42; done; done | tr ' ' '\n'
     for p in global relative; do for b in easy medium hard; do echo abl_ped_atlas_${p}_${b}_seed42 abl_ped_atlas_${p}_${b}_att_seed42; done; done | tr ' ' '\n'
     echo global_medium_att_view_seed42; echo global_hard_att_view_seed42
-    for n in spray_l1 spray_l2 crosstalk_006 crosstalk_010 fog_a002 fog_a006 blackout_3 blackout_10 stuck_4 stuck_10 \
+    for n in spray_l1 spray_l2 spray_l1_v8 crosstalk_006 crosstalk_010 fog_a002 fog_a006 blackout_3 blackout_10 stuck_4 stuck_10 \
              delayed_1 delayed_3 dropped_025 dropped_050 pose_noise_low pose_noise_high; do echo ${n}_seed42; done
 }

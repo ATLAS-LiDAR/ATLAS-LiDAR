@@ -10,6 +10,7 @@
 #   bash banks/build_class_trace_banks.sh           (CPU, ~8 cores, 128 GB, a few hours; inside the pcdet env)
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BANKS_SRC="$HERE"   # config.sh overwrites HERE with its own dir
 source "$HERE/../config.sh"
 EX=$(mktemp -d); trap 'rm -rf "$EX"' EXIT
 while read -r s; do [[ -n $s ]] && : > "$EX/$s.pkl"; done < "$DATA_DIR/segments_50_seed42.txt"
@@ -17,11 +18,11 @@ cd "$OPENPCDET"; export PYTHONUNBUFFERED=1
 COMMON=(--openpcdet "$OPENPCDET" --cfg "$CP_SF_CFG" --data_path "$WAYMO_ROOT" --exclude_dataset_dir "$EX"
         --max_range 60 --min_points 5 --seed 42)
 [[ -f $BANK_DIR/pedestrian/traces_val_pedestrian_hard.pkl ]] || \
-python "$HERE/build_val_object_bank.py" "${COMMON[@]}" --out_dir "$BANK_DIR/pedestrian" \
+python "$BANKS_SRC/build_val_object_bank.py" "${COMMON[@]}" --out_dir "$BANK_DIR/pedestrian" \
     --classes Pedestrian --frame_stride 5 \
     --trace_band Pedestrian:easy:30:60:300 --trace_band Pedestrian:medium:60:100:300 --trace_band Pedestrian:hard:100:300:300
 [[ -f $BANK_DIR/cyclist3/traces_val_cyclist_medium.pkl ]] || \
-python "$HERE/build_val_object_bank.py" "${COMMON[@]}" --out_dir "$BANK_DIR/cyclist3" \
+python "$BANKS_SRC/build_val_object_bank.py" "${COMMON[@]}" --out_dir "$BANK_DIR/cyclist3" \
     --classes Cyclist --frame_stride 1 \
     --trace_band Cyclist:easy:30:60:300 --trace_band Cyclist:medium:60:100:300 --trace_band Cyclist:hard:100:300:300
 python - "$BANK_DIR" <<'PY'
