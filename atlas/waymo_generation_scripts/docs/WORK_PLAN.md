@@ -1,6 +1,7 @@
 # Waymo work plan for the resubmission: who generates / evaluates what (2026-11-05)
 
 Paper source of truth: the Overleaf repo (`ATLAS-LiDAR/overleaf`): `sec/5_evaluations.tex`, `tabs/resub_*.tex`.
+Schedule to the deadline: `PROGRESS_ESTIMATE.md` (what is feasible by 11/14). Coverage per table: `PAPER_GAP_ANALYSIS.md`.
 This file maps every Waymo table to datasets, so a new detector (PHiM) can be evaluated on exactly the right sets.
 
 ## 1. Where the datasets come from
