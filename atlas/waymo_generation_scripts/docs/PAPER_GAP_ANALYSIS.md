@@ -1,5 +1,8 @@
 # Paper experiment list vs. what exists on PACE (Waymo side), 2026-11-05
 
+Snapshot of 11/5 morning. For the schedule, available resources on PACE and Delta, and what is feasible by the
+deadline, see `PROGRESS_ESTIMATE.md` (it supersedes the "where" column here).
+
 Source: `adversarial_lidar/paper` (ATLAS-LiDAR/overleaf @ 6a0d83c): `sec/5_evaluations.tex`, `tabs/resub_*.tex`.
 Status key: DONE = data + evals exist; PARTIAL; TODO-CPU (no GPU/training needed); TODO-GPU (inference only);
 TODO-TRAIN (needs training); NEW-CODE (generator/code doesn't exist yet). nuScenes rows are out of PACE scope.
@@ -27,14 +30,14 @@ TODO-TRAIN (needs training); NEW-CODE (generator/code doesn't exist yet). nuScen
 | **Viewpoint-consistent phantom** | NEW-CODE | re-render the trace per sweep so points don't repeat across frames (control for the frozen-trace cue) |
 | Removal az10-60 | DONE | final-epoch evals queued |
 | Budget-matched 20/50, uniform 50/90, beam 16/32 | DONE | |
-| Road spray (2), crosstalk (2), fog (2) | NEW-CODE | Delta plan |
-| Temporal faults: dropped, stuck, delayed, blackout, pose noise (x2 each) | NEW-CODE | Delta plan; mostly index remaps |
+| Road spray (2), crosstalk (2), fog (2) | code done; generating on PACE (11/5) |
+| Temporal faults: dropped, stuck, delayed, blackout, pose noise (x2 each) | code done; generating on PACE (11/5) |
 
 ## C. Detectors / training (models table)
 | Item | Status |
 |---|---|
 | Tier A+B CP-SF, CP4F, PTT | DONE (CP4F batch confound, see A3) |
-| MSF-4f / MSF-8f GT | DONE; no-GT training on Delta |
+| MSF-4f / MSF-8f GT | DONE; no-GT: MSF-4 reportedly trained on Delta, MSF-8 stuck in Delta queue |
 | **PHiM (Waymo)** | nothing on PACE: recipe, checkpoints, eval pipeline all missing. Owner? |
 | **Tier C** fine-tune w/o GT sampling, every Waymo detector | TODO-TRAIN. Open: epochs/LR (paper TODO); does "no GT sampling" even apply to MSF/PTT second stages (check whether their own training uses gt_sampling) |
 | **Paste-count dose-response**: CP-SF with 0/5/15/30 vehicles | 0 and 15 exist; **5 and 30 need 2 CP-SF retrains** (same recipe as CP-SF GT; ~1 day each) |
@@ -65,7 +68,7 @@ Injection GT/no-GT evals (all sets, all epochs) except MSF no-GT; removal final-
 ## Suggested order with ~12 days left
 1. CPU now: trace-medium generation (2 sets); test-time score threshold; tau_f / EPR / HR / track metrics on what exists; fix text items A1, A2 (soften), A4, A6.
 2. GPU, cheap: MSF clean-frame evals; history interventions for CP4F (code exists).
-3. Generation: pedestrian bank + 6 sets, cyclist easy/medium (4 sets); Delta: spray/crosstalk/fog/temporal faults.
+3. Generation: pedestrian bank + 6 sets, cyclist easy/medium (4 sets); spray/crosstalk/fog/temporal faults: all now generating on PACE (11/5).
 4. Training (decide what to cut): CP-SF paste-count 5/30 (2 runs), Tier C fine-tunes (5), raycast-consistent and adversarial mitigations (4 runs). That is ~11 training runs; realistically only some fit. PHiM needs an owner.
 
 ## G. Coverage count, 5 Waymo models (CP-SF, CP4F, MSF-4f, MSF-8f, PTT), 2026-11-05

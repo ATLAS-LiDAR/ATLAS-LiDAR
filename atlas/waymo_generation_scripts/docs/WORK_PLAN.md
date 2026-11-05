@@ -9,7 +9,7 @@ This file maps every Waymo table to datasets, so a new detector (PHiM) can be ev
 |---|---|---|---|
 | The 63 datasets of `DATASETS.md` (main injection, trace, jitter, car/cyclist ablations, paste, removal, baselines, Gaussian) | 63 | PACE | done |
 | Trace intensity, medium: `global_medium_trace_seed42`, `rel_fixed_medium_trace_seed42` | 2 | PACE (named `*_medium_trace_50_seed42` there) | generating |
-| Everything in `NEW_DATASETS.md` (pedestrian, cyclist easy/medium, viewpoint phantom, spray, crosstalk, fog, temporal faults, pose noise) | 38 | NCSA Delta (`submit_new.sh`) | generating |
+| Everything in `NEW_DATASETS.md` (pedestrian, cyclist easy/medium, viewpoint phantom, spray, crosstalk, fog, temporal faults, pose noise) | 39 (incl. `spray_l1_v8`) | **PACE CPU** since 11/5 (`submit_new.sh`; moved off Delta, whose queue is stuck) | generating; done about 11/6 |
 | Rain, snow, mitigation held-out set | - | - | not planned (no generator / not defined) |
 
 Every dataset: same 50 val segments (`data/segments_50_seed42.txt`), same 32-frame clean/attack schedule, same
@@ -75,5 +75,6 @@ checkpoint. "6 settings" = `{global,rel_fixed}_{easy,medium,hard}`.
 
 ## 5. Status of the existing detectors (PACE)
 See `EVAL_STATUS.md` (snapshot). In short: CP-SF / CP4F / PTT GT + no-GT and MSF-4/8 GT on all injection sets at
-every checkpoint, queued or done; removal / baselines / Gaussian final-epoch GT queued; MSF no-GT waits for Delta
-training; the 38 new sets are evaluated after Delta generation.
+every checkpoint, queued or done; removal / baselines / Gaussian final-epoch GT queued; MSF-4 no-GT reportedly trained
+on Delta (checkpoints to be copied to PACE); MSF-8 no-GT is stuck on Delta (see `PROGRESS_ESTIMATE.md`, section 3);
+the 39 new sets are evaluated on PACE as they finish, MSF/PTT first.
