@@ -122,3 +122,44 @@ Cell counts beyond the first row are rough (±10%).
 - [ ] 11/6: as soon as each new set finishes, submit MSF-4, MSF-8, PTT evals; CP-SF/CP4F behind them with `--nice`.
 - [ ] 11/6: decide Tier C recipe and whether paste-count 5/30 is still worth queueing.
 - [ ] Ongoing: score with `paper_metrics.py` as evals land.
+
+## 8. Update 11/5 night: main paper first, supplement after submission
+
+The supplement is due **one week after 11/16**, so until 11/14 the GPUs go to main-paper items; supplement-only work
+(temporal faults, pose noise, viewpoint phantom, class-wise adaptive sets, history interventions, frame sweep) is
+evaluated 11/14–11/23. Main paper = `sec/6_results.tex`; supplement = everything after `\appendix` in `main.tex`.
+
+Every eval that was already queued feeds a main-paper item (fidelity ladder: trace, jitter; Waymo main: removal;
+selectivity figure: baselines and Gaussian), so nothing was held.
+
+**Submitted 11/5 (main paper; each starts when its dataset finishes generating, NICE=0):**
+
+| Block | Sets | Models | Jobs (H100/L40S twins) |
+|---|---|---|---|
+| Fidelity ladder + selectivity | spray_l1, spray_l2, spray_l1_v8, crosstalk_006/010, fog_a002/a006 | GT final: CP-SF, CP4F, PTT, MSF-4, MSF-8; no-GT final: CP-SF, CP4F, PTT | 21 |
+| GT-sampling table, removal control (was missing) | atlas_removal_az10–60 | no-GT final: CP-SF, CP4F, PTT (GT final already queued) | 6 |
+| Dose-response (class) | attenuated pedestrian (6) + cyclist easy/medium (4) | Tier B: CP-SF and CP4F GT/no-GT at every saved epoch, PTT GT/no-GT e2/4/6 | 55 |
+
+Launchers: `cvpr_scripts/launch_main_new_evals.sh`, `cvpr_scripts/launch_abl_evals.sh` (PACE; not in this repo).
+Not yet submitted for the main paper: MSF on the pedestrian/cyclist sets (no MSF no-GT exists, so it adds nothing to the
+GT effect), MSF clean predictions e2/e4.
+
+## 9. Training: estimates and what is realistic (main paper)
+
+Timing basis (measured): CP4F no-GT, July, 8 L40S, batch 16: 37.6 h for 36 epochs (about 1 h/epoch). MSF-8 GT, March,
+PACE, 2 GPUs, total batch 4: about 21 h/epoch. PACE start estimates on 11/5: 4 × H100 → Nov 20; 4 × L40S → Nov 10;
+8 × L40S (CP4F batch-8, already queued) → 11/5 17:12 after three slips.
+
+| Run | Main-paper item | Compute once running | Earliest realistic start | Realistic outcome by 11/13 |
+|---|---|---|---|---|
+| CP4F no-GT batch 8 (queued) | GT-sampling / factorial control | 8 L40S, about 1.5–2.5 days (batch 8 = twice the iterations of batch 16) | 11/5–6 | **Likely**: done 11/7–8, evals by 11/9–10 |
+| MSF-4 no-GT | GT-sampling table, MSF-4 row | already trained on Delta (per Delta, 28 h on 4 A100) | — | **Likely**, if the checkpoints exist and are copied to PACE by 11/7 |
+| MSF-8 no-GT | GT-sampling table, MSF-8 row | 4 GPUs, about 10–11 h/epoch → about 2.5–3 days for 6 epochs (assumes linear scaling) | Delta: unknown (stuck); PACE L40S about 11/10 | **Partial at best**: e2 (maybe e4) by 11/13. Fallback: MSF-8 GT only |
+| CP-SF paste-count 5 and 30 | dose-response (paste-count) | about 1 day each (estimate; CP-SF trains on every 5th frame) | about 11/9–10 (same queue) | **Uncertain**: one or both might land by 11/12 |
+| Tier C fine-tunes (fine-tune without GT sampling) | fade figure, mitigation table | CP4F: about 1 h/epoch on 8 GPUs, so a few epochs is cheap; CP-SF cheaper; MSF about 0.5 day/epoch on 4 GPUs | after the recipe is decided; queue as above | **CP-SF / CP4F likely** if decided by 11/7; **MSF / PTT unlikely** |
+| Raycast-consistent GT sampling | mitigation table | new code (1–2 days) + 1 CP-SF run (about 1 day) | about 11/9 if code is ready 11/7 | **Unlikely** without an owner this week |
+| Adversarial training (phantoms as negatives) | mitigation table | new code + 2 runs; held-out setting undefined | — | **Not realistic**; future work |
+
+**Order to submit (once decided):** MSF-8 no-GT on PACE L40S (second chance; keep the Delta job), then CP-SF paste-count
+5/30, then Tier C CP-SF/CP4F. All share the same congested queue; nothing is submitted yet (decision pending; see
+`OPEN_QUESTIONS.md`).
