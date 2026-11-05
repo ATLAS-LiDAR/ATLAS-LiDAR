@@ -281,6 +281,16 @@ def build_index_maps(dataset):
             ordered_segments.append(segment)
             seen.add(segment)
 
+    # Pose-noise datasets (NEW_DATASETS.md): ATLAS_POSE_OVERRIDE=<dataset>/metrics/pose_noise.pkl replaces the
+    # ego poses used to align history sweeps with the noisy ones {(segment, local_idx): 4x4}.
+    _po = os.environ.get('ATLAS_POSE_OVERRIDE')
+    if _po:
+        import pickle as _pk
+        _ov = _pk.load(open(_po, 'rb'))
+        for _k, _v in _ov.items():
+            if tuple(_k) in pose_map:
+                pose_map[tuple(_k)] = np.asarray(_v, dtype=np.float64).reshape(4, 4)
+        print(f'ATLAS_POSE_OVERRIDE: {len(_ov)} noisy poses from {_po}', flush=True)
     return global_to_segment, counts, pose_map, ordered_segments
 
 

@@ -17,3 +17,7 @@ export CP_SF_CFG=$OPENPCDET/tools/cfgs/waymo_models/centerpoint.yaml          # 
 export CP_MF_CFG=$OPENPCDET/tools/cfgs/waymo_models/centerpoint_4frames.yaml  # 4-frame loader (frame indexing)
 export CP_SF_CFG_RM=$OPENPCDET/tools/cfgs/custom_models/centerpoint_singleframe_waymo.yaml   # removal generator
 export CP_MF_CFG_RM=$OPENPCDET/tools/cfgs/custom_models/centerpoint_multiframe_waymo.yaml    # removal generator
+# ---- Slurm (submit_new.sh). Set for your cluster (NCSA Delta: CPU partition, your allocation's account) ----
+export SLURM_ACCOUNT=${SLURM_ACCOUNT:-CHANGE_ME}
+export SLURM_PARTITION=${SLURM_PARTITION:-cpu}
+export CONDA_ENV=${CONDA_ENV:-}      # env with pcdet; activated in each job if set (else the submitting env is inherited)

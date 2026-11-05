@@ -42,18 +42,5 @@ NeurIPS-era injection dataset (intensity bug, below).
 - Rebuilt trace libraries match the originals as point sets but not in row order; use the shipped originals for
   byte-exact data.
 
-## Planned additional ablations (to generate/evaluate on NCSA Delta, clean scenes, 50 segments)
-| Ablation | Levels | Build | Metric |
-|---|---|---|---|
-| Road spray (clusters behind moving vehicles) | water film ~1 mm and 2-3 mm, vehicles > 15 m/s | new generator | phantom rate in the spray region + L2 |
-| LiDAR crosstalk | 0.6% and 1.0% of points displaced (Robo3D) | new generator | L2 drop, phantom rate |
-| Frustum / context-aware placement (spoof in line with a real object) | 1 | injection generator variant | injection ASR + target hidden/shifted |
-| Fog (Hahner simulator) | alpha 0.02 (~150 m) and 0.06 (~50 m) | port of released simulator | L2 drop, phantom rate |
-| Sensor blackout | 3 and 10 empty frames | copied dataset | real-vehicle recall over time, recovery frames |
-| Stuck frames | 4 and 10 repeats | copied dataset | same |
-| Delayed frames | 1 and 3 frames | copied dataset | same |
-| Pose noise (stacking) | Dong'23 rotation/translation 0.04/0.004 and 0.10/0.010 | edited poses | same |
-| Dropped history frames | p = 0.25 and 0.5 | eval-time hook (multi-frame models only) | same |
-Already covered by existing data: beam loss (ring baselines), density loss (uniform dropout).
-Sources and rationale: Dong et al. CVPR'23, Robo3D ICCV'23, Hahner ICCV'21, Sato NDSS'24, Hallyburton USENIX'22,
-DejaVu, PhantomLiDAR NDSS'25, MultiCorrupt IV'24.
+## Additional datasets
+Planned on NCSA Delta: see `../NEW_DATASETS.md` (38 datasets) and `WORK_PLAN.md` (table-by-table plan).

@@ -1,3 +1,5 @@
+> **Resubmission (Nov 2026): read `docs/WORK_PLAN.md` first (which datasets feed which paper table, how to score a new detector such as PHiM, who generates what). New datasets: `NEW_DATASETS.md`.**
+
 # ATLAS Waymo datasets: generation + evaluation kit (CVPR'27, 50-segment protocol)
 
 Start here, then read in this order (an agent should read all of them before acting):

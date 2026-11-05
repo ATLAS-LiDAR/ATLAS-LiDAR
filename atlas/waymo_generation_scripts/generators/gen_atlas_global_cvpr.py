@@ -126,12 +126,26 @@ CONST_I = None
 # by d_inter along its line of sight); the aimed box is kept as spoof_gt_intended.
 JITTER_INNER = float(os.environ.get("ATLAS_JITTER_INNER", "0"))
 JITTER_INTER = float(os.environ.get("ATLAS_JITTER_INTER", "0"))
+# Viewpoint-consistent phantom (control for the frozen-trace cue): every frame, each spoof point is moved
+# PERPENDICULAR to its laser ray by N(0, ATLAS_VIEW_TANGENT) m, so successive sweeps sample different surface
+# spots of the same object (as a real object's do) while range, shape and box are unchanged. Separate
+# hash-seeded stream ("atlas_view:<key>"), so every other draw is unchanged and the set stays frame-paired.
+VIEW_TANGENT = float(os.environ.get("ATLAS_VIEW_TANGENT", "0"))
 JITTER_KEY = None          # set by the caller before each spoof_frame()
 LAST_JITTER = (None, 0.0)  # (intended box, d_inter) of the last spoofed frame
 
 
 def _jitter_spoof(spf, gt_box):
     global LAST_JITTER
+    if VIEW_TANGENT > 0:
+        hv = hashlib.sha256(f"atlas_view:{JITTER_KEY}".encode("utf-8")).digest()
+        vr = np.random.default_rng(int.from_bytes(hv[:8], "little"))
+        xyz0 = spf[:, :3].astype(np.float64)
+        u = xyz0 / np.maximum(np.linalg.norm(xyz0, axis=1, keepdims=True), 1e-6)
+        g = vr.normal(0.0, VIEW_TANGENT, xyz0.shape)
+        g -= (g * u).sum(axis=1, keepdims=True) * u          # drop the along-ray component
+        spf = spf.copy()
+        spf[:, :3] = (xyz0 + g).astype(spf.dtype)
     if JITTER_INNER <= 0 and JITTER_INTER <= 0:
         LAST_JITTER = (None, 0.0)
         return spf, gt_box
@@ -2557,7 +2571,7 @@ def parse_args():
     p.add_argument("--position_mode", choices=("fixed", "per_frame"), default="fixed")
     p.add_argument("--object_bank", default=None,
                    help="val object bank pkl (build_val_object_bank.py) for gt_paste")
-    p.add_argument("--target_class", choices=("Vehicle", "Cyclist"), default="Vehicle")
+    p.add_argument("--target_class", choices=("Vehicle", "Pedestrian", "Cyclist"), default="Vehicle")
     p.add_argument("--paste_range_tol", type=float, default=2.0,
                    help="gt_paste: bank object's original range must be within this of the target range (m)")
     p.add_argument("--paste_min_points", type=int, default=5)
