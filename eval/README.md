@@ -81,6 +81,8 @@ of that repo's `pcdet/` changes are PHiM/LOT model work and stay there.
 | `make_qualitative_figs.py` | the BEV figures for the paper (written wherever you point `--out_dir`) |
 | `scripts/` | the drivers actually used for the reported runs, kept verbatim — see [scripts/README.md](scripts/README.md) |
 | `cfgs/` | the three dataset configs added for ATLAS generation, from the pipeline repo's `tools/cfgs/dataset_configs/` |
+| `harness/` | many detectors × every configuration in one run: ASR plus AP/mAP/NDS on the attacked frames, resumable, one GPU job per pair — see [harness/README.md](harness/README.md) |
+| `detector-patches/` | the changes the harness needs in OpenPCDet, LION, DSVT, CenterPoint and CenterFormer, as patches against their upstream commits — see [detector-patches/README.md](detector-patches/README.md) |
 
 `cache_injection_preds.py` also inserts `<repo>/tools` on `sys.path`, which resolved
 to the pipeline repo's `tools/` (train/test utilities) and does **not** resolve here.

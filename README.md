@@ -14,7 +14,7 @@ sensor spins.
 | | |
 |---|---|
 | `atlas/` | **The attack.** A-HFR sector removal and trace-based injection, ~1,400 lines, **numpy only** — no torch, no CUDA, no checkpoints. Plus the dataset generators. |
-| `eval/` | Detector evaluation: attack success rate against clean mAP/NDS. Needs torch and `eval/phim`. |
+| `eval/` | Detector evaluation: attack success rate against clean mAP/NDS. Needs torch and `eval/phim`. `eval/harness/` scores many detectors at once and adds accuracy on the attacked frames; `eval/detector-patches/` holds the changes it needs in third-party detectors. |
 | `validation/` | Real-world fidelity check against OSF deposit `k6nf2` — does ATLAS's output resemble an actual spoofer's? |
 | `index.html`, `src/`, `assets/` | The sandbox. No build step, no Node. |
 | `dev/` | Test and export harnesses. See [dev/README.md](dev/README.md). |

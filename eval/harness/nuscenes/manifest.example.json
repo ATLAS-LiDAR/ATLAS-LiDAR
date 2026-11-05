@@ -1,0 +1,44 @@
+{
+  "_comment": "Copy and edit. ${VAR} and ~ are expanded; relative repo/ckpt paths are relative to this file, relative cfg paths to repo. A ckpt with {epoch} plus an epochs list expands to <name>_ep<epoch>. Optional per model: python (interpreter), pythonpath (list), variant.",
+
+  "centerpoint_gt": {
+    "backend": "det3d", "repo": "${CENTERPOINT_ROOT}",
+    "cfg": "configs/nusc/voxelnet/nusc_centerpoint_voxelnet_0075voxel_fix_bn_z.py",
+    "ckpt": "${CKPT_ROOT}/centerpoint_gt/epoch_{epoch}.pth", "epochs": [5, 10, 15, 20]
+  },
+  "centerpoint_no_gt": {
+    "backend": "det3d", "repo": "${CENTERPOINT_ROOT}",
+    "cfg": "configs/nusc/voxelnet/nusc_centerpoint_voxelnet_0075voxel_fix_bn_z_no_gt.py",
+    "ckpt": "${CKPT_ROOT}/centerpoint_no_gt/epoch_{epoch}.pth", "epochs": [5, 10, 15, 20]
+  },
+  "centerformer_gt": {
+    "backend": "det3d", "repo": "${CENTERFORMER_ROOT}",
+    "cfg": "configs/nusc/nuscenes_centerformer_separate_detection_head.py",
+    "ckpt": "${CKPT_ROOT}/centerformer_gt/epoch_{epoch}.pth", "epochs": [5, 10, 15, 20]
+  },
+  "centerformer_no_gt": {
+    "backend": "det3d", "repo": "${CENTERFORMER_ROOT}",
+    "cfg": "configs/nusc/nuscenes_centerformer_separate_detection_head_no_gt.py",
+    "ckpt": "${CKPT_ROOT}/centerformer_no_gt/epoch_{epoch}.pth", "epochs": [5, 10, 15, 20]
+  },
+  "lion_gt": {
+    "backend": "pcdet", "repo": "${LION_ROOT}",
+    "cfg": "tools/cfgs/lion_models/lion_mamba_nusc_8x_1f_1x_one_stride_128dim.yaml",
+    "ckpt": "${CKPT_ROOT}/lion_gt/checkpoint_epoch_{epoch}.pth", "epochs": [9, 18, 27, 36]
+  },
+  "lion_no_gt": {
+    "backend": "pcdet", "repo": "${LION_ROOT}",
+    "cfg": "tools/cfgs/lion_models/lion_mamba_nusc_8x_1f_1x_one_stride_128dim_no_gt.yaml",
+    "ckpt": "${CKPT_ROOT}/lion_no_gt/checkpoint_epoch_{epoch}.pth", "epochs": [9, 18, 27, 36]
+  },
+  "dsvt_gt": {
+    "backend": "pcdet", "repo": "${DSVT_ROOT}",
+    "cfg": "tools/cfgs/dsvt_models/dsvt_plain_1f_onestage_nusences.yaml",
+    "ckpt": "${CKPT_ROOT}/dsvt_gt/checkpoint_epoch_{epoch}.pth", "epochs": [5, 10, 15, 20]
+  },
+  "dsvt_no_gt": {
+    "backend": "pcdet", "repo": "${DSVT_ROOT}",
+    "cfg": "tools/cfgs/dsvt_models/dsvt_plain_1f_onestage_nusences_no_gt.yaml",
+    "ckpt": "${CKPT_ROOT}/dsvt_no_gt/checkpoint_epoch_{epoch}.pth", "epochs": [5, 10, 15, 20]
+  }
+}

@@ -1,0 +1,137 @@
+diff --git a/det3d/core/bbox/geometry.py b/det3d/core/bbox/geometry.py
+index a62ee7b..8645000 100644
+--- a/det3d/core/bbox/geometry.py
++++ b/det3d/core/bbox/geometry.py
+@@ -290,24 +290,15 @@ def points_in_convex_polygon_jit(points, polygon, clockwise=True):
+     num_points_of_polygon = polygon.shape[1]
+     num_points = points.shape[0]
+     num_polygons = polygon.shape[0]
+-    if clockwise:
+-        vec1 = (
+-            polygon
+-            - polygon[
+-                :,
+-                [num_points_of_polygon - 1] + list(range(num_points_of_polygon - 1)),
+-                :,
+-            ]
+-        )
+-    else:
+-        vec1 = (
+-            polygon[
+-                :,
+-                [num_points_of_polygon - 1] + list(range(num_points_of_polygon - 1)),
+-                :,
+-            ]
+-            - polygon
+-        )
++    # Numba nopython mode does not support a Python list as an array index.
++    # Build the same previous-vertex edge vectors using scalar indices.
++    vec1 = np.empty_like(polygon)
++    for j in range(num_polygons):
++        for k in range(num_points_of_polygon):
++            previous = num_points_of_polygon - 1 if k == 0 else k - 1
++            for axis in range(2):
++                edge = polygon[j, k, axis] - polygon[j, previous, axis]
++                vec1[j, k, axis] = edge if clockwise else -edge
+     # vec1: [num_polygon, num_points_of_polygon, 2]
+     ret = np.zeros((num_points, num_polygons), dtype=np.bool_)
+     success = True
+diff --git a/det3d/solver/fastai_optim.py b/det3d/solver/fastai_optim.py
+index a543447..efcd0ae 100644
+--- a/det3d/solver/fastai_optim.py
++++ b/det3d/solver/fastai_optim.py
+@@ -1,4 +1,5 @@
+-from collections import Iterable, defaultdict
++from collections import defaultdict
++from collections.abc import Iterable
+ from copy import deepcopy
+ from itertools import chain
+ 
+diff --git a/det3d/solver/optim.py b/det3d/solver/optim.py
+index 224ada0..cf06943 100644
+--- a/det3d/solver/optim.py
++++ b/det3d/solver/optim.py
+@@ -1,4 +1,5 @@
+-from collections import Iterable, defaultdict
++from collections import defaultdict
++from collections.abc import Iterable
+ from copy import deepcopy
+ from itertools import chain
+ 
+diff --git a/det3d/torchie/apis/train.py b/det3d/torchie/apis/train.py
+index 9c3e5fb..f2aeff1 100644
+--- a/det3d/torchie/apis/train.py
++++ b/det3d/torchie/apis/train.py
+@@ -6,8 +6,8 @@ from functools import partial
+ 
+ try:
+     import apex
+-except:
+-    print("No APEX!")
++except ImportError:
++    apex = None
+ 
+ import numpy as np
+ import torch
+@@ -265,7 +265,12 @@ def train_detector(model, dataset, cfg, distributed=False, validate=False, logge
+     total_steps = cfg.total_epochs * len(data_loaders[0])
+     # print(f"total_steps: {total_steps}")
+     if distributed:
+-        model = apex.parallel.convert_syncbn_model(model)
++        if apex is not None:
++            model = apex.parallel.convert_syncbn_model(model)
++            logger.info("Using Apex SyncBatchNorm")
++        else:
++            model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
++            logger.info("Apex unavailable; using PyTorch native SyncBatchNorm")
+     if cfg.lr_config.type == "one_cycle":
+         # build trainer
+         optimizer = build_one_cycle_optimizer(model, cfg.optimizer)
+diff --git a/det3d/torchie/parallel/collate.py b/det3d/torchie/parallel/collate.py
+index fce4d0e..2816247 100644
+--- a/det3d/torchie/parallel/collate.py
++++ b/det3d/torchie/parallel/collate.py
+@@ -1,3 +1,4 @@
++import collections.abc
+ import collections
+ from collections import defaultdict
+ 
+@@ -21,7 +22,7 @@ def collate(batch, samples_per_gpu=1):
+     3. cpu_only = False, stack = False, e.g., gt bboxes
+     """
+ 
+-    if not isinstance(batch, collections.Sequence):
++    if not isinstance(batch, collections.abc.Sequence):
+         raise TypeError("{} is not supported.".format(batch.dtype))
+ 
+     if isinstance(batch[0], DataContainer):
+@@ -76,10 +77,10 @@ def collate(batch, samples_per_gpu=1):
+                     [sample.data for sample in batch[i : i + samples_per_gpu]]
+                 )
+         return DataContainer(stacked, batch[0].stack, batch[0].padding_value)
+-    elif isinstance(batch[0], collections.Sequence):
++    elif isinstance(batch[0], collections.abc.Sequence):
+         transposed = zip(*batch)
+         return [collate(samples, samples_per_gpu) for samples in transposed]
+-    elif isinstance(batch[0], collections.Mapping):
++    elif isinstance(batch[0], collections.abc.Mapping):
+         return {
+             key: collate([d[key] for d in batch], samples_per_gpu) for key in batch[0]
+         }
+diff --git a/tools/train.py b/tools/train.py
+index a3a4354..13cb7d1 100644
+--- a/tools/train.py
++++ b/tools/train.py
+@@ -47,7 +47,11 @@ def parse_args():
+         default="pytorch",
+         help="job launcher",
+     )
+-    parser.add_argument("--local_rank", type=int, default=0)
++    parser.add_argument(
++        "--local-rank", "--local_rank", dest="local_rank", type=int,
++        default=int(os.environ.get("LOCAL_RANK", "0")),
++        help="local process rank (also read from LOCAL_RANK for torchrun)",
++    )
+     parser.add_argument(
+         "--autoscale-lr",
+         action="store_true",

@@ -190,3 +190,19 @@ suspect.
 
   `deliberately_unpublished` in `PROVENANCE.json` records the decision, so the absence
   is documented rather than looking like something went missing.
+
+## Written here, not extracted
+
+These files were never in the pipeline repo, so they have no upstream hash and are not
+listed in `PROVENANCE.json`. `check_provenance.py` verifies only the files it lists, so
+they do not affect the 129/129 claim either way.
+
+- `atlas/build_nuscenes_traces_multiclass.py` — per-class trace libraries (pedestrian,
+  cyclist, ...) for the nuScenes injection generators, in the format they already read.
+- `atlas/export_nuscenes_hf_streaming.py` — the same Parquet export as
+  `export_nuscenes_hf.py`, writing each shard as soon as it is full instead of holding a
+  whole split in memory.
+- `tools/gen_nuscenes_atlas.sh`, `tools/run_multiclass_inject_nuscenes.sh` — drivers that
+  generate every car / pedestrian / cyclist injection split and every removal split.
+- `eval/harness/`, `eval/detector-patches/` — the multi-detector evaluation harness and
+  the patches it needs in third-party detector repositories.

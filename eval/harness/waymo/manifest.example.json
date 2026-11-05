@@ -1,0 +1,13 @@
+{
+  "_comment": "Copy and edit. ${VAR} and ~ are expanded; relative repo/ckpt paths are relative to this file, relative cfg paths to repo. repo defaults to --repo (eval/phim). A ckpt with {epoch} plus an epochs list expands to <name>_ep<epoch>.",
+
+  "phim": {
+    "cfg": "tools/cfgs/voxel_mamba_models/phim.yaml",
+    "ckpt": "${CKPT_ROOT}/phim/checkpoint_epoch_{epoch}.pth", "epochs": [6, 12]
+  },
+  "centerpoint": {
+    "repo": "${OPENPCDET_ROOT}",
+    "cfg": "tools/cfgs/waymo_models/centerpoint.yaml",
+    "ckpt": "${CKPT_ROOT}/centerpoint_waymo/checkpoint_epoch_30.pth"
+  }
+}

@@ -59,3 +59,8 @@ docs/
 # reviewers who did not consent) and was purged from this repo's history rather than
 # only deleted at the tip.
 results/
+
+# LOCAL DATASET COPIES ARE NOT COMMITTED
+# data/ is where the generation scripts look for nuScenes by default
+# (eval/cfgs/*_gen.yaml: DATA_PATH ../data/nuscenes). Licensed third-party data.
+/data/
