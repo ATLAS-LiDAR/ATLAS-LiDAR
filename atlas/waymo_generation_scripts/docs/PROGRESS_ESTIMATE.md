@@ -1,4 +1,4 @@
-# Progress estimate: what can feasibly be evaluated by 11/14 (updated 2026-11-05, evening: PACE GPU queue re-checked)
+# Progress estimate: what can feasibly be evaluated by 11/14 (updated 2026-11-05: PACE GPU queue re-checked; MSF-4 no-GT arrived)
 
 Submission 11/16; results frozen about **11/14**, so there are **9 days of compute** left. Paper coverage today: 383 of 733
 required cells (52%, see `PAPER_GAP_ANALYSIS.md`).
@@ -123,7 +123,7 @@ Cell counts beyond the first row are rough (±10%).
 - [ ] 11/6: decide Tier C recipe and whether paste-count 5/30 is still worth queueing.
 - [ ] Ongoing: score with `paper_metrics.py` as evals land.
 
-## 8. Update 11/5 night: main paper first, supplement after submission
+## 8. Update 11/5: main paper first, supplement after submission
 
 The supplement is due **one week after 11/16**, so until 11/14 the GPUs go to main-paper items; supplement-only work
 (temporal faults, pose noise, viewpoint phantom, class-wise adaptive sets, history interventions, frame sweep) is
@@ -153,8 +153,8 @@ PACE, 2 GPUs, total batch 4: about 21 h/epoch. PACE start estimates on 11/5: 4 �
 | Run | Main-paper item | Compute once running | Earliest realistic start | Realistic outcome by 11/13 |
 |---|---|---|---|---|
 | CP4F no-GT batch 8 (queued) | GT-sampling / factorial control | 8 L40S, about 1.5–2.5 days (batch 8 = twice the iterations of batch 16) | 11/5–6 | **Likely**: done 11/7–8, evals by 11/9–10 |
-| MSF-4 no-GT | GT-sampling table, MSF-4 row | already trained on Delta (per Delta, 28 h on 4 A100) | — | **Likely**, if the checkpoints exist and are copied to PACE by 11/7 |
-| MSF-8 no-GT | GT-sampling table, MSF-8 row | 4 GPUs, about 10–11 h/epoch → about 2.5–3 days for 6 epochs (assumes linear scaling) | Delta: unknown (stuck); PACE L40S about 11/10 | **Partial at best**: e2 (maybe e4) by 11/13. Fallback: MSF-8 GT only |
+| MSF-4 no-GT | GT-sampling table, MSF-4 row | **trained on Delta (6 epochs, 27 h on 4 A100); on PACE since 11/5** | — | **Evals submitted 11/5** (section 10); clean val e6 exists, e2/e4 coming from Delta |
+| MSF-8 no-GT | GT-sampling table, MSF-8 row | 4 GPUs: MSF-4 no-GT took 4.4 h/epoch on 4 A100; MSF-8 roughly 2× → about 8–10 h/epoch, **about 2–2.5 days** for 6 epochs | Delta: unknown (stuck); PACE L40S about 11/10 | **Partial at best**: e2 (maybe e4) by 11/13. Fallback: MSF-8 GT only |
 | CP-SF paste-count 5 and 30 | dose-response (paste-count) | about 1 day each (estimate; CP-SF trains on every 5th frame) | about 11/9–10 (same queue) | **Uncertain**: one or both might land by 11/12 |
 | Tier C fine-tunes (fine-tune without GT sampling) | fade figure, mitigation table | CP4F: about 1 h/epoch on 8 GPUs, so a few epochs is cheap; CP-SF cheaper; MSF about 0.5 day/epoch on 4 GPUs | after the recipe is decided; queue as above | **CP-SF / CP4F likely** if decided by 11/7; **MSF / PTT unlikely** |
 | Raycast-consistent GT sampling | mitigation table | new code (1–2 days) + 1 CP-SF run (about 1 day) | about 11/9 if code is ready 11/7 | **Unlikely** without an owner this week |
@@ -163,3 +163,18 @@ PACE, 2 GPUs, total batch 4: about 21 h/epoch. PACE start estimates on 11/5: 4 �
 **Order to submit (once decided):** MSF-8 no-GT on PACE L40S (second chance; keep the Delta job), then CP-SF paste-count
 5/30, then Tier C CP-SF/CP4F. All share the same congested queue; nothing is submitted yet (decision pending; see
 `OPEN_QUESTIONS.md`).
+
+## 10. MSF-4 no-GT on PACE (11/5)
+
+- Delta bundle → `/storage/cedar/cedar0/cedarp-gchou3-0/adversarial_lidar/transfers/msf4_nogt_delta/` (archive) and
+  `.../adversarial_lidar/msf_nogt/msf_4frames/` (checkpoints e1–e6, clean val e6 predictions; README).
+- PACE MSF code: Delta's two fixes for frames with 0 proposals applied (`msf_utils.py`, `dataset.py`; outputs for all
+  other frames unchanged; backups `*.bak_pre_delta_20261105`).
+- Eval scripts: `MSF_FAM=nogt` switch (wrappers `eval_msf_nogt.sh`, `seed_msf_nogt.sh`): MSF no-GT checkpoints, proposals
+  from CP4F no-GT e36 on the same attacked frames, output `<set>/evaluation/msf4_cvpr/nogt_epoch{E}/`.
+  Smoke test on `sub50_global_hard_seed42`: seeded proposals match the CP4F no-GT full-val predictions (box-count ratio
+  median 1.000, PROPOSAL CHECK OK).
+- **Submitted (43 evals, NICE=0):** 12 injection sets (6 settings × adaptive/attenuated) at e2/e4/e6; trace (6), jitter (12),
+  removal az10–60, spray/crosstalk/fog (7) at e6. Sets whose CP4F no-GT e36 is still queued wait for it.
+- Still needed: clean val predictions at e2/e4 (Delta is producing them; EPR at those checkpoints needs them).
+- Not yet planned: MSF-4 GT/no-GT on the pedestrian/cyclist dose-response sets (would add MSF to that figure; about 20 evals).

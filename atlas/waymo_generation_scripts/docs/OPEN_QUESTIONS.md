@@ -23,8 +23,10 @@ giving e2 (maybe e4) by 11/13.
 - ANSWER:
 - Default: submit on PACE; report whatever checkpoints exist, with a note.
 
-**A3. MSF-4 no-GT on Delta**: is training finished (all 6 epochs)? Where are the checkpoints? Who copies them to PACE
-(`/storage/cedar/cedar0/cedarp-gchou3-0/...`, not project storage, which is full)?
+**A3. MSF-4 no-GT on Delta**: ~~is training finished?~~ RESOLVED 11/5: finished (6 epochs), on PACE, evals submitted
+(`PROGRESS_ESTIMATE.md` section 10). Open: Delta produces clean val `result.pkl` for e2/e4 and transfers them to
+`transfers/msf4_nogt_delta/eval_epoch{N}_val/`.
+- Should MSF-4 (GT + no-GT) be added to the class dose-response sets (about 20 evals)?
 - ANSWER:
 
 **A4. CP-SF paste-count 5 / 30** (dose-response, paste-count part): still wanted given the queue? 0 and 15 exist.
