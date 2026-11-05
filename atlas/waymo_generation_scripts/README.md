@@ -2,6 +2,7 @@
 
 Start here, then read in this order (an agent should read all of them before acting):
 1. `docs/STUDY_PLAN.md` and `docs/EVAL_STATUS.md` (which model / epoch / GT or no-GT is done, running or queued per dataset): what the study is, every dataset and its status, protocol decisions, caveats, planned ablations.
+1b. `docs/DATASETS.md`: every one of the 63 datasets, one row each, with a detailed description.
 2. this README: setup, banks, generating or subsetting a dataset, the dataset registry.
 3. `docs/GENERATION.md`: exactly how each attack is built (schedule, placement, raycasting, intensity, jitter,
    paste, removal, baselines, banks) and the most efficient way to produce a dataset.
