@@ -37,11 +37,31 @@ checkpoint. "6 settings" = `{global,rel_fixed}_{easy,medium,hard}`.
    score 0.1/0.3/0.5/0.7, per-segment counts for bootstrap). Removal, baselines and ALL scene-level sets
    (fog, spray, crosstalk, temporal faults, pose noise): `eval/scoring/atlas_removal_eval_only.py` with the
    detector's clean val predictions as reference (targets = `spoof_gt` / `removal_meta`).
-3. Paper metrics (EPR, conditional HR, calibrated threshold) also need the detector's predictions on the same
-   frames WITHOUT perturbation: the full Waymo val clean predictions (`result.pkl`) of that checkpoint.
+3. Paper metrics: `eval/scoring/paper_metrics.py --dataset <name dir> --pred <.../predictions> --clean <clean
+   predictions of the SAME checkpoint>` writes `paper_metrics.json` next to the predictions: calibrated threshold
+   tau_f (precision 0.9 on the clean frames), EPR (injection) or conditional HR (removal-type), raw ASR, track-level
+   rate (3 of 5) and onset latency, collateral damage C (own AP3D, target excluded), point budget, and 95% segment
+   bootstrap CIs, at tau_f and at 0.1/0.3/0.5/0.7. `--clean` = the checkpoint's predictions on unperturbed frames
+   (OpenPCDet val `result.pkl`, matched by frame_id). Effective robustness is a fit across all detectors' jsons.
+   Every scoring design choice (fired vs all-valid frames, argmax vs any-match, tau_f vs fixed thresholds, track
+   variants) is computed and stored as a separate key; pick the paper's key when building tables.
+   Validation (2026-11-05): injection path reproduces `atlas_metrics` raw ASR (CP4F GT e36, global_hard: 0.4768 vs
+   0.4772). Removal path and `paired_diff.py` (joint segment bootstrap of A - B) are still being validated.
 4. Multi-frame detectors: build history from the stored frames of the same dataset (not from raw Waymo), as
    `eval/eval_cp4f.sh` does; for `pose_noise_*` set `ATLAS_POSE_OVERRIDE=<dataset>/metrics/pose_noise.pkl`
    (applied to history alignment only).
+
+## 3b. Getting the PACE datasets onto Delta (two routes)
+* **Transfer** (Globus) from PACE `/storage/scratch1/9/spanse30/cvpr_datasets/<name>` (~39 GB each).
+  The PACE `sub50_*` sets (main settings, trace easy/hard) are per-file SYMLINKS into 195-segment splits and Globus
+  does not follow symlinks: materialise them first (`cp -rL`) or use route 2. Existing PACE evals live in
+  `<name>/evaluation/` (transfer that subfolder only if Delta needs the PACE detectors' predictions).
+* **Regenerate** with `bash generate.sh <kit name>` (CPU; ~2 h global, ~3.3 h relative, ~1.3 h removal/baseline;
+  identical frames: every draw is keyed by seed and original frame index). Name mapping PACE -> kit:
+  `sub50_<setting>_seed42` -> `<setting>_seed42`; `sub50_<setting>_att_seed42` -> `<setting>_att_seed42`;
+  `sub50_<setting>_full_trace_seed42` -> `<setting>_trace_seed42`; `*_medium_trace_50_seed42` -> `*_medium_trace_seed42`;
+  every other name is identical. Removal widths need `baseline_matched_az50_seed42` first (pairing check).
+* Either way, a detector that only runs on Delta needs only the datasets of its tables in section 2.
 
 ## 4. Open decisions (affect how much has to be evaluated)
 * Fidelity ladder "GT effect": the paper defines the GT effect as a regression over ALL checkpoints; if kept,
