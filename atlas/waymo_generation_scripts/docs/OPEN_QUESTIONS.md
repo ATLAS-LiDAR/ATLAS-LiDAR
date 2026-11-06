@@ -40,6 +40,14 @@ giving e2 (maybe e4) by 11/13.
 Is anyone writing them this week? What is the "held-out setting never used for training" in `tabs/resub_mitigation.tex`?
 - ANSWER:
 - Default: both moved to future work; mitigation table = score filter (≥ 0.7) + Tier C rows.
+- 11/6 (PACE side, user-approved): the two test-time rows are implemented with OUR definitions
+  (`eval/scoring/testtime_filters.py`, calibrated on clean frames only). Intensity-consistency filter: drop a vehicle box
+  whose (mean, std) point intensity is > k robust sigmas from real vehicles in its 10 m range band, k = p99 over clean
+  true positives (~1% clean false rejection). Sector point-drop detection: 1-deg azimuth histogram vs the last
+  un-flagged, pose-compensated frame (<= 3 s old); >= 5 deg run below ratio rho (<= 1% flagged clean frames) = dropped
+  sector; the reference frame's detections in it are re-inserted. Please confirm or replace.
+- Held-out column: Sec. 5 defines it only for training-time mitigations that see ATLAS data; still a TODO in the paper,
+  so it stays empty.
 
 ## B. Metric and table definitions
 
@@ -49,6 +57,8 @@ injection sets, but the new scene sets (spray, crosstalk, fog) and removal no-GT
 - Keep the regression for the GT-sampling table and use the final-epoch GT − no-GT difference for the fidelity ladder?
 - ANSWER:
 - Default: yes (regression where all checkpoints exist; final-epoch difference elsewhere, stated in the caption).
+- 11/6: removal at every Tier B checkpoint (CP-SF e9/18/27, CP4F e9/18/27, PTT e2/4, MSF-4 e2/4; GT and no-GT) and
+  clean MSF-4 val predictions at e2/e4 are queued, so Delta HR (and MSF-4f Delta EPR) can use the regression too.
 - 11/6 result: the regression is fragile for PTT. On the 6 attenuated settings (e2/4/6 per arm) it gives +0.020
   [+0.006, +0.035]; on the 3 settings with all 6 PTT epochs (6 + 6 checkpoints) it gives +0.004 [-0.014, +0.020]; the
   final-epoch gap is +0.001. PTT checkpoints span only 0.637-0.662 clean Vehicle AP3D, so the slope is poorly
@@ -107,7 +117,9 @@ overleaf branch `waymo-results-draft`):
   ~0, jitter -0.014/-0.017).
 - RQ3 / GT-sampling caption: supported at paste/adaptive only; no consistent GT effect at the attenuated reference.
 - Mitigation table: "score >= 0.7" is looser than the tau_f baseline (0.74-0.77), so it needs a defined baseline.
-- Removal HR falls at 50-60 deg (0.81 vs 0.95-0.98), also in raw hiding; check the wide-width generator.
+- ~~Removal HR falls at 50-60 deg~~ RESOLVED 11/6: by design. The A-HFR removal probability is width-specific
+  (0.97/1.0/0.99/0.98 at 10-40 deg, 0.90 at 50-60 deg; spec table, generator `P_REMOVE_BY_AZ_WIDTH`); same targets and
+  frames at every width, 21% of attacked frames keep >= 10 target points at 50-60 deg vs < 2% at 20-40 deg.
 - ANSWER:
 
 ## E. Detectors
