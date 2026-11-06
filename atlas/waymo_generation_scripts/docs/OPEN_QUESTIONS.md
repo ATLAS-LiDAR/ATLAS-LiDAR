@@ -46,6 +46,12 @@ injection sets, but the new scene sets (spray, crosstalk, fog) and removal no-GT
 - Keep the regression for the GT-sampling table and use the final-epoch GT − no-GT difference for the fidelity ladder?
 - ANSWER:
 - Default: yes (regression where all checkpoints exist; final-epoch difference elsewhere, stated in the caption).
+- 11/6 result: the regression is fragile for PTT. On the 6 attenuated settings (e2/4/6 per arm) it gives +0.020
+  [+0.006, +0.035]; on the 3 settings with all 6 PTT epochs (6 + 6 checkpoints) it gives +0.004 [-0.014, +0.020]; the
+  final-epoch gap is +0.001. PTT checkpoints span only 0.637-0.662 clean Vehicle AP3D, so the slope is poorly
+  determined. Report the final-epoch difference next to the regression?
+- Cross-proposal PTT evals (GT PTT on no-GT CP4F proposals and the reverse, e6) exist on 4 sets but are unscored
+  (no clean predictions for the crossed pipelines). Worth a clean run to split proposal- vs refinement-stage effects?
 
 **B2. Checkpoints for "Tier B".** PTT runs at e2/4/6 (not e1–6), MSF at e2/4/6, CP-SF e9/18/27/30, CP4F e9/18/27/36. OK?
 - ANSWER:
@@ -58,11 +64,10 @@ injection sets, but the new scene sets (spray, crosstalk, fog) and removal no-GT
 **B4. Main-table intensity**: attenuated (the paper's reference) as the headline, adaptive reported as well?
 - ANSWER:
 
-**B5. Scoring design choices** (`eval/scoring/paper_metrics.py` computes all of them; pick one per table):
-fired vs all-valid attack frames; argmax vs any-match; τ_f (precision 0.9 on clean frames) vs fixed 0.1/0.3/0.5/0.7; track
-variant (`block_filled|onset_from_block` etc.).
-- ANSWER:
-- Default: fired, argmax, τ_f; track variant `block_filled|onset_from_block`.
+**B5. Scoring design choices**: RESOLVED 11/5 by the paper's own definitions (`sec/5_evaluations.tex`, Metrics):
+any-match rule (m_τ = any box of the target class with score ≥ τ and IoU ≥ 0.7 / 0.5), fired attack frames, τ_f
+(precision 0.9 on clean frames). Tables are filled with `fired|any|tau_f`; argmax (the earlier ATLAS rule) is kept
+only for continuity with previous numbers. Still open: track-level variant (default `block_filled|onset_from_block`).
 
 ## C. Spray, weather, and table-less datasets
 
@@ -88,9 +93,18 @@ They are described in `sec/5_evaluations.tex:37` and the spec table.
 
 **D1.** CP-SF is trained for 30 epochs on every 5th frame; the paper says 36 epochs (evaluated at 9/18/27/36).
 **D2.** RQ4 says CP-SF vs CP4F have an "identical recipe apart from the number of input sweeps"; they differ in training
-frames (1/5 vs all), epochs (30 vs 36) and CP4F batch (GT 8 vs no-GT 16; a batch-8 no-GT control is training).
+frames (1/5 vs all) and epochs (30 vs 36).
 **D3.** Waymo trace / cyclist banks come from val segments excluding the 50 evaluation segments, not from the training split.
-- Who updates the text, and how (soften vs re-run)? A batch-8 control result is expected ~11/9.
+- Who updates the text, and how (soften vs re-run)?
+- ANSWER:
+
+**D4. Results that contradict the current text** (details in the draft-analysis blocks of `sec/6_results.tex`,
+overleaf branch `waymo-results-draft`):
+- RQ2 hypothesis (ii): the GT effect does not hold at every fidelity rung (paste +0.29, adaptive +0.058, attenuated
+  ~0, jitter -0.014/-0.017).
+- RQ3 / GT-sampling caption: supported at paste/adaptive only; no consistent GT effect at the attenuated reference.
+- Mitigation table: "score >= 0.7" is looser than the tau_f baseline (0.74-0.77), so it needs a defined baseline.
+- Removal HR falls at 50-60 deg (0.81 vs 0.95-0.98), also in raw hiding; check the wide-width generator.
 - ANSWER:
 
 ## E. Detectors

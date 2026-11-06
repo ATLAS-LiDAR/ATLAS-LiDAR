@@ -51,6 +51,8 @@ K, N = 3, 5
 
 def load_clean(path):
     d = pickle.load(open(path, 'rb'))
+    if isinstance(d, dict) and 'det_annos' in d:     # clean_recall/<det>/<label>/predictions.pkl
+        d = d['det_annos']
     if isinstance(d, dict) and 'frame_id' not in d:
         return {str(k): v for k, v in d.items()}
     return {str(p['frame_id']): p for p in d}
