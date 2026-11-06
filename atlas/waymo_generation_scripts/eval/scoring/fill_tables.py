@@ -106,6 +106,20 @@ class Store:
         return float(np.mean(v)) if v else None
 
 
+SCORE07 = '/storage/cedar/cedar0/cedarp-gchou3-0/adversarial_lidar/cvpr_scripts/scoring/score07'
+TTM = '/storage/scratch1/9/spanse30/cvpr_datasets/results/testtime'
+TTM_DET = {'CP-SF': 'cp_sf', 'CP4F': 'cp4f'}
+
+
+def logged_map(path):
+    """'mAP xx.xx' written by clean_map_thresh.py (official Waymo L2 mAP on the current 195-seq val split)."""
+    try:
+        m = re.findall(r'mAP (\d+\.\d+)', open(path).read())
+        return f'{float(m[-1]):.1f}' if m else None
+    except OSError:
+        return None
+
+
 def mean_over(st, sets, det, label, tau=None):
     r = [st.rate(s, det, label, tau) for s in sets]
     if not r or any(x is None for x in r):
@@ -370,6 +384,23 @@ def main():
             v = [nmap(fam, g) if tau is None else None] + [cell(r) for r in rs]
             if tau is not None or g == 'nogt':
                 v.append('none' if tau is not None else 'retrain')
+            if tau is not None:          # clean L2 mAP of the thresholded val predictions (CPU Waymo eval)
+                v[0] = logged_map(f"{SCORE07}/{ {'CP-SF': 'cpsf_gt_e30_s07', 'CP4F': 'cp4f_gt_e36_s07'}[fam] }/log_metric.txt")
+            t.fill(key, v, occ)
+        # test-time filters (testtime_filters.py; calibrated on clean frames only)
+        for key, f in ((r'& & Intensity-consistency filter', 'ic'), (r'& & Sector point-drop detection', 'sd')):
+            dd = f'{det}_ttm_{f}'; root = f'{TTM}/{TTM_DET[fam]}/{lg}'
+            rs = [st.rate(ATT['global_hard'], dd, lg), st.rate(ATT['rel_fixed_hard'], dd, lg), None,
+                  st.rate(REM[20], dd, lg), st.rate(REM[50], dd, lg)]
+            for nm, r in zip(('GH', 'RH', 'held-out', 'az20', 'az50'), rs):
+                log(f'{fam} {key.split("&")[-1].strip()} {nm}', r, f'test-time filter {f}')
+            ms = None
+            try:
+                ms = eval(open(f'{root}/timing_val.txt').read().split('}')[0] + '}')[f'{f}_ms_per_frame']
+            except Exception:
+                pass
+            v = [logged_map(f'{root}/map_{f}/log_metric.txt')] + [cell(r) for r in rs] + \
+                [None if ms is None else f'CPU, {ms:.0f} ms/frame']
             t.fill(key, v, occ)
     t.save(a.out / t.name, a.notes)
 
