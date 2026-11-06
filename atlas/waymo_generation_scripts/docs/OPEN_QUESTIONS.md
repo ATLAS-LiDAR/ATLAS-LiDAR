@@ -11,8 +11,11 @@ paper source = `ATLAS-LiDAR/overleaf`.
 - How many epochs, and what LR / schedule? (Suggestion: the last 1/6 of the original schedule, constant LR = final LR of the
   original one-cycle schedule.)
 - Which detectors: CP-SF and CP4F only, or also MSF-4/8 and PTT?
-- Do MSF and PTT second stages use GT sampling in their own training at all? If not, "fine-tune without GT sampling"
-  means only the proposal network (CP4F) changes for them.
+- ~~Do MSF and PTT second stages use GT sampling in their own training at all?~~ ANSWERED 11/6 from source: **no**.
+  MSF `msf_{4,8}frames.yaml` replaces the augmentation list (flip/rotation/scaling only; confirmed in both GT and
+  no-GT training logs); PTT likewise (Oct notes). GT vs no-GT MSF/PTT differ only in which CP4F e36 proposals they
+  train on and refine. So for them "fine-tune without GT sampling" means fine-tuning CP4F, then re-training or
+  re-using the refiner on the new proposals.
 - ANSWER:
 - Default: CP-SF and CP4F only, suggested recipe; MSF/PTT listed as future work.
 
